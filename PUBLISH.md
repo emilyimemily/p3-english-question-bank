@@ -1,7 +1,8 @@
 # Publishing checklist - PRIVATE repository
 
-**Current state:** the site is built, fully validated and committed in this local git repository.
-It has **not** been pushed yet. Everything below assumes the repository stays **private**.
+**Current state:** built, fully validated and published to the **PRIVATE** repository
+`https://github.com/emilyimemily/p3-english-question-bank`. Everything below documents the
+procedure for reference and assumes the repository stays **private**.
 
 ## Why there is no GitHub Pages step
 
@@ -39,8 +40,9 @@ git remote add origin https://github.com/emilyimemily/p3-english-question-bank.g
 git push -u origin main
 ```
 
-Git Credential Manager opens a browser window for sign-in. No credential is shared with the
-assistant and no token is written to disk by this project.
+The initial push was made with the GitHub CLI credential already stored on this machine
+(`emilyimemily`, OAuth scope `repo`); no token is stored in the repository. If you push again
+yourself, Git Credential Manager opens a browser window for sign-in.
 
 **Verify:** the repo page shows a **Private** badge. Do **not** enable Pages.
 
