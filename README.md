@@ -9,6 +9,7 @@ tracking. Open the link on a phone, tablet or laptop and start practising.
 - Works offline after the first visit (PWA + service worker)
 - **Open JSON data** so any app, script or AI agent can consume the bank
 - Entirely in English, including all labels, tags, topics and annotations
+- **Every reading-comprehension question carries its article** (full text plus a scan of the original page)
 
 > **Live site:** https://emilyimemily.github.io/p3-english-question-bank/
 > Public repository; GitHub Pages serves `main` / `/ (root)` - the same setup as
@@ -152,3 +153,21 @@ All annotations, topics, review notes and interface text are in English. Chinese
 original working files are deliberately **not** published here.
 
 See `NOTICE.md` for sources and takedown information.
+
+
+## 6. Reading passages
+
+Every passage-based question (reading comprehension, comprehension cloze, grammar
+and vocabulary cloze, visual text) carries its article, not just a short context
+window:
+
+| Field | Meaning |
+| --- | --- |
+| `passage` | Full article text reconstructed from the OCR, shared by all questions in the same comprehension section. |
+| `passage_images` | Paths to the scanned original exam page(s); click to open full size. |
+| `passage_pages` | 1-based page numbers in the source PDF. |
+
+`passages/` contains 211 JPEG scans (~18 MB). OCR cannot recover every line or
+any poster artwork, so the scan is the authoritative version; the text is there
+for searching and quick reading. Listening-comprehension items have no printed
+passage and are supplied as scans only.

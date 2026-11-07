@@ -111,7 +111,11 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .passage summary{cursor:pointer;font-weight:600;color:#3b5bdb;list-style:none}
 .passage summary::-webkit-details-marker{display:none}
 .passage summary::before{content:'▾ ';font-size:11px}
-.passage-body{margin-top:8px;line-height:1.75;white-space:pre-wrap;max-height:190px;overflow:auto}
+.passage-body{margin-top:8px;line-height:1.75;white-space:pre-wrap;max-height:260px;overflow:auto}
+.passage-scan{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.passage-scan .scan-label{font-size:12px;font-weight:600;color:#5b6480}
+.passage-scan a{display:block}
+.passage-scan img{display:block;width:100%;max-width:760px;border:1px solid #dfe5f2;border-radius:6px;background:#fff}
 .opts{display:grid;grid-template-columns:repeat(2,1fr);gap:4px 18px;margin:8px 0}
 .opt-line{padding:4px 6px;border-radius:6px;font-size:14px}
 .opt-line.correct-opt{background:var(--green-soft);color:var(--green);font-weight:600}
@@ -230,6 +234,8 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
   .passage{background:#fff;border-color:#bbb;color:#222;break-inside:avoid}
   .passage summary{color:#222}
   .passage-body{max-height:none;overflow:visible;font-size:11px;line-height:1.5}
+  .passage-scan .scan-label{color:#222;font-size:10px}
+  .passage-scan img{max-height:8cm;object-fit:contain;object-position:top;border-color:#bbb}
   .blank-lines{background:repeating-linear-gradient(to bottom,transparent 0,transparent 25px,#bbb 25px,#bbb 26px)}
 }
 </style>
@@ -257,8 +263,15 @@ function allQuestions(){
 /* Reading passage / context for cloze & comprehension items (collapsible in screen, open in print) */
 function passageHtml(q){
   const p = q && q.passage ? String(q.passage).trim() : '';
-  if (!p) return '';
-  return '<details class="passage" open><summary>Reading Passage / Context</summary><div class="passage-body">'+esc(p)+'</div></details>';
+  const imgs = (q && Array.isArray(q.passage_images)) ? q.passage_images.filter(Boolean) : [];
+  if (!p && !imgs.length) return '';
+  const scan = imgs.length
+    ? '<div class="passage-scan"><div class="scan-label">Original passage (scanned page - click to enlarge)</div>'+
+      imgs.map(function(src){
+        return '<a href="'+esc(src)+'" target="_blank" rel="noopener"><img src="'+esc(src)+'" alt="Original passage" loading="lazy"></a>';
+      }).join('')+'</div>'
+    : '';
+  return '<details class="passage" open><summary>Reading Passage / Context</summary><div class="passage-body">'+esc(p)+'</div>'+scan+'</details>';
 }
 function papers(){
   return (BANK && Array.isArray(BANK.papers)) ? BANK.papers.filter(p => p && typeof p === 'object') : [];

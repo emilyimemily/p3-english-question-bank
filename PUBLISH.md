@@ -48,3 +48,10 @@ CDNs; making the repo private again cannot recall those copies.
 `robots.txt` currently allows indexing. To reduce search-engine exposure, change
 `Allow: /` to `Disallow: /` and push. See `NOTICE.md` for source attribution and
 takedown information.
+
+## Reading passages
+
+`passages/<pdf-stem>/pNN.jpg` holds 211 scanned exam pages (~18 MB) showing the
+original articles, cloze texts and visual texts. They are ordinary static files;
+keep that folder next to `index.html` when copying the site offline. Rebuilding
+the bank requires `work/attach_passages.py` followed by `work/build_cloud.py`.
