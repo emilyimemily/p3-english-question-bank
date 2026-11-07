@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P3Bank SDK - Integration Example</title>
+<style>
+  :root{--navy:#1F3A6E;--soft:#EEF3FF;--line:#D6DCE8;--ok:#137A46;--bad:#C0392B}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f6f8fd;color:#1c2536;font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:820px;margin:0 auto;padding:32px 20px 64px}
+  h1{font-size:24px;color:var(--navy);margin:0 0 6px}
+  p.lead{color:#5b6780;margin:0 0 24px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:18px;box-shadow:0 2px 10px rgba(31,58,110,.05)}
+  code,pre{font-family:ui-monospace,Consolas,monospace;font-size:13px}
+  pre{background:var(--soft);padding:14px;border-radius:8px;overflow:auto;margin:0 0 18px}
+  label{display:block;font-weight:600;margin-bottom:6px;font-size:14px}
+  select,input[type=text]{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff}
+  .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:16px}
+  .row>div{flex:1;min-width:180px}
+  button{border:0;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;background:var(--navy);color:#fff}
+  button.ghost{background:#fff;color:var(--navy);border:1px solid var(--line)}
+  .q{border-top:1px solid var(--line);padding:16px 0}
+  .q:first-child{border-top:0}
+  .meta{font-size:12px;color:#7a869e;margin-bottom:6px}
+  .stem{margin:0 0 10px;font-weight:500}
+  .opt{display:block;padding:4px 0;cursor:pointer}
+  .tag{display:inline-block;background:var(--soft);color:var(--navy);border-radius:5px;padding:1px 7px;font-size:12px;margin-left:6px}
+  .flag{background:#FFF4E5;color:#B7791F}
+  #status{color:#5b6780;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Embed the question bank in any page</h1>
+  <p class="lead">A working integration using <code>sdk/question-bank.js</code>. No build step, no API key, no framework.</p>
+
+  <pre>&lt;script src="./sdk/question-bank.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  await P3Bank.load();                       // auto-detects the repo root
+  const items = P3Bank.random(5, { year: 2025 });
+  const result = P3Bank.grade(items[0], "2");
+&lt;/script&gt;</pre>
+
+  <div class="card">
+    <div class="row">
+      <div><label for="topic">Topic</label><select id="topic"><option value="">All topics</option></select></div>
+      <div><label for="n">Questions</label><input id="n" type="text" value="5" inputmode="numeric"></div>
+      <div><button id="draw">Draw questions</button></div>
+      <div><button id="submit" class="ghost">Submit answers</button></div>
+    </div>
+    <div id="status">Loading question bank...</div>
+  </div>
+
+  <div class="card" id="quiz" hidden></div>
+</div>
+
+<script src="./sdk/question-bank.js"></script>
+<script>
+(async function(){
+  const status = document.getElementById('status');
+  const quiz   = document.getElementById('quiz');
+  const topic  = document.getElementById('topic');
+  try{
+    await P3Bank.load();                       // reads ./data/question_bank.json
+    const s = P3Bank.stats();
+    Object.keys(s.byTopic).sort().forEach(function(t){
+      const o = document.createElement('option'); o.value = t; o.textContent = t; topic.appendChild(o);
+    });
+    status.textContent = 'Loaded ' + s.total + ' questions from ' + (P3Bank.meta.papers) + ' papers.';
+  }catch(err){
+    status.textContent = 'Load failed: ' + err.message + ' (serve over HTTP, not file://)';
+    return;
+  }
+  let current = [];
+  document.getElementById('draw').addEventListener('click', function(){
+    const n = Math.max(1, Math.min(20, parseInt(document.getElementById('n').value, 10) || 5));
+    current = P3Bank.random(n, { topic: topic.value, excludeNeedsReview: true });
+    if (!current.length){ quiz.hidden = true; status.textContent = 'No questions match.'; return; }
+    quiz.hidden = false;
+    status.textContent = 'Showing ' + current.length + ' question(s).';
+    quiz.innerHTML = current.map(function(q, i){
+      const opts = Object.keys(q.options || {});
+      const body = opts.length
+        ? opts.map(function(k){
+            return '<label class="opt"><input type="radio" name="q'+i+'" value="'+k+'"> ('+k+') '+escapeHtml(q.options[k])+'</label>';
+          }).join('')
+        : '<input type="text" id="open'+i+'" placeholder="Type your answer">';
+      return '<div class="q" data-i="'+i+'"><div class="meta">'+
+             [q.year, q.school, q.exam, 'Q'+q.no, q.type].join(' · ')+
+             '<span class="tag">'+escapeHtml(q.topic)+'</span></div>'+
+             '<p class="stem">'+escapeHtml(q.stem)+'</p>'+body+
+             '<p class="result"></p></div>';
+    }).join('');
+  });
+  document.getElementById('submit').addEventListener('click', function(){
+    let total = 0, full = 0;
+    current.forEach(function(q, i){
+      const node = quiz.querySelector('[data-i="'+i+'"]');
+      let ans = '';
+      const radio = node.querySelector('input[type=radio]:checked');
+      const open  = node.querySelector('input[type=text]');
+      if (radio) ans = radio.value; else if (open) ans = open.value;
+      const g = P3Bank.grade(q, ans);
+      total += g.score; full += g.marks;
+      const p = node.querySelector('.result');
+      p.style.color = g.correct ? 'var(--ok)' : 'var(--bad)';
+      p.textContent = (g.correct ? 'Correct' : 'Not yet') + ' - ' + g.score + '/' + g.marks +
+                      '  |  Reference: ' + (q.answer_text || q.answer || 'see source paper');
+    });
+    status.textContent = 'Score: ' + total + ' / ' + full;
+  });
+  function escapeHtml(s){
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+  }
+})();
+</script>
+</body>
+</html>

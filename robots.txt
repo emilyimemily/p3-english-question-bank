@@ -1,0 +1,4 @@
+# This is a public repository. Indexing is currently allowed.
+# To opt out, replace the line below with: Disallow: /
+User-agent: *
+Allow: /

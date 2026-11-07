@@ -1,0 +1,12 @@
+# Local build artefacts
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+
+# Local-only source files (never publish the original scans)
+*.pdf
+*.xlsx
+/private/
