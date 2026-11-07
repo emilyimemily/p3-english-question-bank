@@ -10,3 +10,9 @@ Thumbs.db
 *.pdf
 *.xlsx
 /private/
+
+# The deploy passphrase is generated on the build machine and must stay there.
+# It is normally kept at work/deploy_password.txt, outside this repository.
+deploy_password.txt
+*_password.txt
+.env

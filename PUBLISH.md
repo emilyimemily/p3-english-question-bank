@@ -1,54 +1,106 @@
-# Publishing checklist
+# Publishing checklist - PRIVATE repository
 
 **Current state:** the site is built, fully validated and committed in this local git repository.
-It has **not** been pushed yet, because this session has no active GitHub credential.
+It has **not** been pushed yet. Everything below assumes the repository stays **private**.
 
-## Option A - GitHub connector (preferred)
+## Why there is no GitHub Pages step
 
-1. In WorkBuddy, open the **+** menu at the bottom-left, enable the **GitHub** connector and sign in.
-2. Say *"push it"* in the chat.
-3. The assistant creates the public repository `p3-english-question-bank`, pushes the `main`
-   branch, enables GitHub Pages (source: branch `main`, folder `/ (root)`), and verifies the live URL.
-4. The assistant replaces `YOUR_GITHUB_USERNAME` in `README.md` with your actual login.
+Per GitHub's documentation:
 
-## Option B - push from your own terminal
+- On **GitHub Free**, a repository that publishes Pages **must be public**. Make it private and
+  the site stops serving.
+- On **Pro / Team / Enterprise**, Pages can be built from a private repository, but the
+  published site is **still publicly readable on the internet**: "GitHub Pages sites are publicly
+  available on the internet, even if the repository for the site is private."
+- Truly private Pages sites require **GitHub Enterprise Cloud** with an organisation account.
 
-1. Create a **new empty public repository** named `p3-english-question-bank` on GitHub.
-   Do **not** add a README, license or .gitignore (an empty repo avoids a merge conflict).
-2. Run:
+So Pages cannot satisfy both "private" and "reachable from anywhere without exposing the papers".
+This repo uses a private GitHub repository plus an **encrypted static bundle** instead.
 
-   ```bash
-   cd <this folder>
-   git remote add origin https://github.com/YOUR_GITHUB_USERNAME/p3-english-question-bank.git
-   git push -u origin main
-   ```
+---
 
-   Git Credential Manager will open a browser window for sign-in. Nothing needs to be shared
-   with the assistant.
-3. In the repo go to **Settings > Pages**, choose **Deploy from a branch**, branch `main`,
-   folder `/ (root)`, and Save. The site goes live at
-   `https://YOUR_GITHUB_USERNAME.github.io/p3-english-question-bank/` within a minute or two.
-4. Replace `YOUR_GITHUB_USERNAME` in `README.md` and commit the change.
+## Step 1 - create the PRIVATE repository
 
-## Option C - keep it local
+On GitHub, click **New repository** and set:
 
-Run `python -m http.server 8000` in this folder and open `http://localhost:8000/`.
-`offline.html` also works with a plain double-click, with no server at all.
+| Field | Value |
+| --- | --- |
+| Repository name | `p3-english-question-bank` |
+| Visibility | **Private** |
+| README / .gitignore / license | **Leave all off** (empty repo avoids a merge conflict) |
 
-## After publishing - verify
+Copy the repository URL GitHub shows you.
+
+## Step 2 - push from your own terminal
+
+```bash
+cd "C:\Users\seren\WorkBuddy\2026-11-07-16-00-47\p3-english-question-bank"
+git remote add origin https://github.com/emilyimemily/p3-english-question-bank.git
+git push -u origin main
+```
+
+Git Credential Manager opens a browser window for sign-in. No credential is shared with the
+assistant and no token is written to disk by this project.
+
+**Verify:** the repo page shows a **Private** badge. Do **not** enable Pages.
+
+<details>
+<summary>Optional: use the WorkBuddy GitHub connector instead</summary>
+
+The connector is not installed in this session. In the client, open **Connectors** in the left
+sidebar (or the connector icon / **+** near the message box, then **More Connectors**), search
+for **GitHub**, click the **+** / **Connect** button and finish the browser OAuth flow. Once the
+status reads Connected, ask the assistant to create a private repository and push. If your build
+does not list GitHub, use Step 2 instead.
+
+Official connector reference:
+`https://www.workbuddy.ai/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Connector`
+</details>
+
+## Step 3 - publish the encrypted bundle (students from anywhere)
+
+Upload the **contents** of the `deploy/` folder - not the folder itself - to any static host:
+
+- **Netlify Drop**: `https://app.netlify.com/drop` - drag the folder contents in, get an HTTPS URL.
+- **Cloudflare Pages** > Create a project > **Direct Upload** - upload the folder contents.
+- Any static host that serves **HTTPS** (required: browsers expose `crypto.subtle` only on HTTPS
+  and `http://localhost`).
+
+Then share two things with students **through separate channels**:
+
+1. the site URL,
+2. the passphrase.
+
+The passphrase is **not** in the git repository and **not** in `deploy/`. It is stored on this
+build machine at `work/deploy_password.txt` (or supplied via the `P3_BANK_PASSPHRASE`
+environment variable). Students open the URL, enter the passphrase once and can use all three
+tabs. The encrypted file is cached by the service worker, so the page also unlocks offline.
+
+## Step 4 - verify
 
 | Check | Expected |
 | --- | --- |
-| `/` | The English app with "P3 English Question Bank" |
-| `/data/question_bank.json` | Valid JSON, `meta.questions` = 1375 |
-| `/api/stats.json` | Valid JSON totals |
-| `/manifest.webmanifest` | Valid JSON (PWA installable) |
-| `/example.html` | SDK demo loads and can draw questions |
+| Repo visibility | **Private** badge on GitHub |
+| `https://<host>/` | "Unlock the question bank" passphrase screen |
+| Correct passphrase | English app, 1,375 questions, three tabs |
+| Wrong passphrase | "Incorrect passphrase. Please try again." |
+| `https://<host>/secure/bank.enc` | Opaque base64/JSON ciphertext, no question text |
+| `https://<host>/robots.txt` | `Disallow: /` |
+| `https://<host>/data/question_bank.json` | **404** (must not exist) |
+| Anonymous `raw.githubusercontent.com/.../data/question_bank.json` | **404** (private repo) |
 
-## Notes
+## Step 5 - optional integrations
 
-- This is a **public** repository. Exam-paper text, answers and annotations are visible to
-  anyone and may be cached by search engines and CDNs. See `NOTICE.md` for takedown information
-  and `robots.txt` if you later want to block indexing.
-- To update the bank, replace `data/question_bank.json` plus the derived `api/*.json`, commit and
-  push. Pages republishes automatically.
+- **Program / AI tool**: fetch the private JSON with `Authorization: Bearer <PAT>` from a
+  server-side proxy, or call `P3Bank.loadSecure(passphrase)` against the deploy host.
+- **Never** place a GitHub token in browser JavaScript, a static page or a shared URL.
+- **Rotate the passphrase**: delete `work/deploy_password.txt` (or set a new
+  `P3_BANK_PASSPHRASE`), rerun `build_cloud.py`, re-upload `deploy/`, commit and push.
+- **Keep it entirely local**: `python -m http.server 8000` in the repo folder, or just
+  double-click `offline.html`. No upload at all.
+
+## What must NEVER be uploaded
+
+`data/`, `api/`, `offline.html`, `example.html`, `question_bank.json`, the original scanned PDFs,
+and `work/deploy_password.txt`. All of these contain plaintext or secrets. Only `deploy/` is
+safe for a public host.
