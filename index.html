@@ -172,6 +172,33 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .answer-area{width:100%;resize:vertical}
 .end-bar{text-align:center}
 
+/* ===== One-question-at-a-time online practice ===== */
+.practice-top{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.practice-progress{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+.practice-progress .pp-num{font-size:17px;font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+.pp-track{width:180px;height:8px;border-radius:999px;background:var(--border);overflow:hidden}
+.pp-fill{height:100%;background:var(--accent);border-radius:999px;transition:width .2s}
+.practice-bar{position:sticky;bottom:0;z-index:9;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  background:rgba(255,255,255,.97);border:1px solid var(--border);border-bottom:0;
+  border-radius:12px 12px 0 0;padding:10px 14px;margin-top:14px;
+  box-shadow:0 -4px 18px rgba(16,24,40,.09)}
+.practice-bar .bar-right{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.practice-bar .bar-note{font-size:12px;color:var(--muted);max-width:460px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.practice-bar .bar-note.has-result{color:var(--accent-dark);font-weight:700;white-space:normal}
+.feedback-inline{margin-top:14px;border-left:4px solid var(--accent)}
+.feedback-inline.is-bad{border-left-color:var(--red)}
+.feedback-inline.is-ok{border-left-color:var(--green)}
+.locked-note{background:var(--accent-soft);color:var(--accent-dark);border-radius:8px;
+  padding:8px 12px;font-size:13px;margin-top:12px}
+@media (max-width:680px){
+  .practice-bar{padding:8px 10px;gap:6px}
+  .practice-bar .btn{padding:9px 10px;font-size:13px;touch-action:manipulation}
+  .practice-bar .bar-note{flex:1 1 100%;max-width:100%;white-space:normal;font-size:12px}
+  .practice-bar .bar-right{flex:1 1 100%;justify-content:flex-end}
+  .pp-track{width:110px}
+}
+
 /* ===== Feedback card ===== */
 .status{font-weight:700;padding:2px 8px;border-radius:6px;font-size:12px}
 .status.ok{background:var(--green-soft);color:var(--green)}
@@ -461,22 +488,11 @@ function visTableHtml(q, interactive){
   });
   return h + '</tbody></table>';
 }
-/* a fillable field for every blank of this question, mirrored from the box
-   that sits on the scan - both places always hold the same text */
-function visualAnswerRow(q, interactive){
-  const boxes = ownOverlays(q);
-  if (!boxes.length) return '';
-  const parts = visParts(q.id);
-  let h = '<div class="blank-row"><span class="br-label">Your answers</span>';
-  boxes.forEach(function(o, i){
-    const part = o.part || ('o'+i);
-    h += '<span class="br-num">'+(i+1)+'</span>'+
-         '<input type="text" data-field="vpart" data-qid="'+esc(q.id)+'" data-part="'+esc(part)+
-         '" value="'+esc(interactive === 'print' ? '' : (parts[part] || ''))+'" placeholder="'+esc(o.label || ('Blank '+(i+1)))+
-         '"'+(interactive === 'print' ? ' disabled' : '')+'>';
-  });
-  h += '<span class="br-hint">Type directly in the boxes on the scan, or here - both stay in sync.</span></div>';
-  return h;
+/* Plain answer field for questions whose scan has NO printed box of its own. */
+function plainAnswerHtml(q, ans, rows){
+  return '<div class="visual-answer"><div class="blank-label">Your answer (write below the question)</div>'+
+         '<textarea class="answer-area" rows="'+(rows || 3)+'" data-field="student-answer" data-qid="'+esc(q.id)+
+         '" placeholder="Type your answer here...">'+esc(ans)+'</textarea></div>';
 }
 function visualAnswerHtml(q, interactive, ans){
   const v = vis(q); if (!v) return '';
@@ -490,25 +506,14 @@ function visualAnswerHtml(q, interactive, ans){
          '<input type="hidden" data-field="vpart" data-qid="'+esc(q.id)+'" data-part="_lines" value="'+
          esc(visParts(q.id)['_lines'] || '[]')+'"></div>';
   }
-  if (mode === 'reading' || mode === 'matching'){
-    /* multiple choice answers are the option buttons shown below the scan;
-       an open answer is typed in the box right under the question scan */
-    if (!hasOptions(q)){
-      h += '<div class="visual-answer"><div class="blank-label">Your answer (write below the question)</div>'+
-           '<textarea class="answer-area" rows="3" data-field="student-answer" data-qid="'+esc(q.id)+
-           '" placeholder="Type your answer here...">'+esc(ans)+'</textarea></div>';
-    }
-    return h;
-  }
-  /* cloze / editing / synthesis: the blanks on the scan carry the answer */
-  if (own.length){
-    h += visualAnswerRow(q, interactive);
-  } else {
-    h += '<div class="visual-answer"><div class="blank-label">Your answer</div>'+
-         '<textarea class="answer-area" rows="2" data-field="student-answer" data-qid="'+esc(q.id)+
-         '" placeholder="Type your answer here...">'+esc(ans)+'</textarea></div>';
-  }
-  return h;
+  /* Cloze / editing / synthesis already have a real, focusable text box on
+     every printed blank of the scan.  A second row of boxes under the picture
+     was confusing and is deliberately NOT rendered any more. */
+  if (own.length) return h;
+  /* An editable True/False or tick table is itself the answer input. */
+  if (v.table) return h;
+  if (hasOptions(q)) return h;
+  return h + plainAnswerHtml(q, ans, mode === 'reading' ? 3 : 2);
 }
 /* A question that has no answer boxes still gets its OWN screenshot, cut out
    of the PDF, instead of a whole page that contains other question types. */
@@ -664,9 +669,12 @@ const state = {
   drawCount: 10,
   paper: null,                // generated paper { title, date, questions[] }
   showAnswers: false,         // teacher preview: show answers & explanations
-  student: {                  // active practice session
+  student: {                  // active practice session - ONE question on screen
     active:false, questions:[], answers:{}, submitted:false,
-    results:{}, startTime:0, elapsed:0, label:'', wbRedo:false
+    results:{}, startTime:0, elapsed:0, label:'', wbRedo:false,
+    qIndex:0,                 // question currently on screen
+    cursor:0,                 // first question that has not been submitted yet
+    showSummary:false
   },
   autoRemove: true,           // Auto-remove from wrong book on correct answer
   wbSort: 'topic',            // grouping key for the wrong-book list
@@ -1017,18 +1025,43 @@ function renderTeacher(){
 }
 
 /* ============================================================
-   9. Student tab — Student Practice
+   9. Student tab — one question on screen, submit to see the score
    ============================================================ */
+function scrollTop(){
+  try{ window.scrollTo({top:0, behavior:'smooth'}); }
+  catch(e){ try{ window.scrollTo(0,0); }catch(e2){} }
+}
+function scrollToFeedback(){
+  const el = document.getElementById('practiceFeedback');
+  if (el && el.scrollIntoView){
+    try{ el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
+  }
+}
 function startPractice(questions, opts){
   state.student = {
     active:true, questions:questions.slice(), answers:{}, submitted:false, results:{},
-    startTime:Date.now(), elapsed:0, label:(opts && opts.label) || 'Practice', wbRedo:!!(opts && opts.wbRedo)
+    startTime:Date.now(), elapsed:0, label:(opts && opts.label) || 'Practice', wbRedo:!!(opts && opts.wbRedo),
+    qIndex:0, cursor:0, showSummary:false
   };
   state.visualParts = {};
   state.tab = 'student';
   render();
-  try{ window.scrollTo({top:0, behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); }
+  scrollTop();
 }
+function gotoQuestion(i){
+  const s = state.student, n = s.questions.length;
+  if (!s.active || !n) return;
+  s.qIndex = Math.max(0, Math.min(n - 1, i));
+  render();
+  scrollTop();
+}
+/* The question the student was working on: the first one that has not been
+   submitted yet.  Reviewing an old question never changes this pointer. */
+function practiceResumeIndex(){
+  const s = state.student, n = s.questions.length;
+  return Math.min(s.cursor, Math.max(0, n - 1));
+}
+function gradedQuestion(q){ return !!(state.student.results[q.id]); }
 function startPracticeCustom(){
   const pool = matchedQuestions();
   if (!pool.length){ flash('No questions match the current filters.'); return; }
@@ -1046,19 +1079,24 @@ function startWBRedo(qid){
   if (!q){ flash('This question is no longer in the bank.'); return; }
   startPractice([q], {label:'Redo Wrong Items', wbRedo:true});
 }
+/* Only the question on screen is graded.  Its score and the reference answer
+   stay hidden until this button is pressed. */
 function submitPractice(){
   const s = state.student;
-  if (s.submitted) return;
-  s.elapsed = Date.now() - s.startTime;
-  s.submitted = true;
-  s.results = {};
-  s.questions.forEach(q => {
-    const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
-    const g = gradeQuestion(q, ans);
-    s.results[q.id] = { score:g.score, correct:g.correct, overridden:false };
-    syncWrongbookOnSubmit(q, ans, g);
-  });
+  const q = s.questions[s.qIndex];
+  if (!q || gradedQuestion(q)) return;
+  const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
+  const g = gradeQuestion(q, ans);
+  s.results[q.id] = { score:g.score, correct:g.correct, overridden:false };
+  syncWrongbookOnSubmit(q, ans, g);
+  if (s.qIndex === s.cursor) s.cursor = Math.min(s.questions.length, s.cursor + 1);
+  if (s.cursor >= s.questions.length && !s.submitted){
+    s.submitted = true;
+    s.elapsed = Date.now() - s.startTime;
+    s.showSummary = true;
+  }
   render();
+  scrollToFeedback();
 }
 function overrideResult(qid, isCorrect){
   const q = state.student.questions.find(x => x.id === qid);
@@ -1118,54 +1156,32 @@ function renderRadioOptions(q, i, ans){
     (useTick ? 'data-group="'+esc(q.id+'_opt')+'" ' : '')+(String(ans)===String(k)?'checked':'')+
     '><span>'+esc(k)+'. '+esc(opts[k])+'</span></label>').join('')+'</div>';
 }
-function renderStudentForm(){
-  const s = state.student;
-  const cards = s.questions.map((q,i) => {
-    const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
-    const input = hasOptions(q)
-      ? renderRadioOptions(q, i, ans)
-      : (vis(q) ? '' : '<textarea class="answer-area" rows="3" placeholder="Type your answer here..." data-field="student-answer" data-qid="'+esc(q.id)+'">'+esc(ans)+'</textarea>');
-    return '<section class="qcard">'+
-      '<div class="qcard-head"><span class="qno">'+(i+1)+'</span> <span class="src">'+esc(sourceTag(q))+'</span> '+
-        '<span class="marks">('+numMarks(q)+' marks)</span></div>'+
-      passageHtml(q)+questionVisual(q,{interactive:true, ans:ans})+stemHtml(q)+ input +
-    '</section>';
-  }).join('');
-  return '<div class="wrap">'+
-    '<div class="card pract-head">'+
-      '<div><b>'+esc(s.label)+'</b> · Total '+s.questions.length+' questions</div>'+
-      '<div>Time <span id="liveTimer" class="timer">'+fmtTime(Date.now()-s.startTime)+'</span></div>'+
-      '<div class="toolbar"><button class="btn ghost" data-action="student-back">Back</button>'+
-        '<button class="btn primary" data-action="submit">Submit Answers</button></div>'+
-    '</div>'+
-    cards+
-    '<div class="card end-bar"><button class="btn primary" data-action="submit">Submit Answers</button></div>'+
-  '</div>';
-}
-function feedbackCard(q, i){
+/* Inline result panel: only rendered AFTER the student pressed Submit. */
+function practiceFeedback(q){
   const s = state.student;
   const r = s.results[q.id] || {score:0, correct:false, overridden:false};
   const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
   const marks = numMarks(q);
-  const status = r.score >= marks ? '<span class="status ok">✓ Correct</span>'
-               : (r.score <= 0   ? '<span class="status bad">✗ Incorrect</span>'
-                                 : '<span class="status part">◐ Partial credit</span>');
+  const ok = r.score >= marks;
+  const status = ok ? '<span class="status ok">Correct</span>'
+               : (r.score <= 0 ? '<span class="status bad">Incorrect</span>'
+                               : '<span class="status part">Partial marks</span>');
   const topic = [q.topic, q.objective].filter(Boolean).join(' · ') || '—';
-  const why = r.score >= marks ? 'Correct answer. You have mastered this topic - keep it up!' : wrongWhy(q, ans);
+  const why = ok ? 'Well done - you have secured this mark.' : wrongWhy(q, ans);
   const inWB = loadWB().some(x => x.qid === q.id);
-  const chosen = hasOptions(q) && ans !== '' ? '(you chose '+esc(ans)+'. '+esc((q.options||{})[ans] || '')+')' : '';
-  return '<section class="qcard feedback">'+
-    '<div class="qcard-head"><span class="qno">'+(i+1)+'</span> <span class="src">'+esc(sourceTag(q))+'</span> '+status+'</div>'+
-    passageHtml(q)+questionVisual(q,{interactive:true})+stemHtml(q)+
-    '<div class="ans-ref"><b>Reference answer: </b>'+esc(modelAnswer(q))+' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+' '+chosen+'</div>'+
+  const chosen = hasOptions(q) && ans !== ''
+    ? ' (You chose '+esc(ans)+'. '+esc((q.options||{})[ans] || '')+')' : '';
+  return '<section class="card feedback-inline '+(ok?'is-ok':'is-bad')+'" id="practiceFeedback">'+
+    '<div class="qcard-head"><b>Result</b> '+status+
+      ' <span class="marks">Score '+r.score+' / '+marks+'</span>'+
+      (r.overridden ? ' <small class="muted">(self-corrected)</small>' : '')+'</div>'+
+    '<div class="ans-ref"><b>Reference answer: </b>'+esc(modelAnswer(q))+
+      ' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+chosen+'</div>'+
     '<div class="fb-grid">'+
       '<div class="fb-row"><div class="fb-label">This item tests</div><div class="fb-body">'+esc(topic)+'</div></div>'+
-      '<div class="fb-row"><div class="fb-label">Score</div><div class="fb-body"><b>'+r.score+' / '+marks+'</b> marks'+
-        (r.overridden?' <small class="muted">(self-corrected)</small>':'')+'</div></div>'+
-      '<div class="fb-row"><div class="fb-label">What went wrong / Why</div><div class="fb-body">'+esc(why)+'</div></div>'+
-      '<div class="fb-row"><div class="fb-label">Needs Review</div><div class="fb-body">'+esc(q.review || 'Review the topic and explanation, then redo similar items.')+
+      '<div class="fb-row"><div class="fb-label">Why / what to revise</div><div class="fb-body">'+esc(why)+
         ' <button class="linkbtn" data-action="add-wrong" data-qid="'+esc(q.id)+'" '+(inWB?'disabled':'')+'>'+
-        (inWB?'✓ In wrong book':'Add to Wrong Book')+'</button></div></div>'+
+        (inWB ? 'Already in Wrong Book' : 'Add to Wrong Book')+'</button></div></div>'+
     '</div>'+
     '<div class="explain"><b>Explanation: </b>'+esc(q.explanation || '—')+'</div>'+
     '<div class="override"><span class="muted">Self-correction:</span>'+
@@ -1174,28 +1190,101 @@ function feedbackCard(q, i){
     '</div>'+
   '</section>';
 }
-function renderStudentResults(){
+function practiceSummaryCard(){
   const s = state.student, sum = practiceSummary();
-  const cards = s.questions.map((q,i) => feedbackCard(q,i)).join('');
   const allRight = sum.correctCount === sum.total;
-  return '<div class="wrap">'+
-    '<div class="card summary"><h2>Practice Results</h2>'+
-      '<div class="sum-stats">'+
-        '<div class="sum-num"><span>Score</span><b>'+sum.totalScore+' / '+sum.totalMarks+'</b></div>'+
-        '<div class="sum-num"><span>Accuracy</span><b>'+sum.acc+'%</b><small>'+sum.correctCount+' / '+sum.total+' fully correct</small></div>'+
-        '<div class="sum-num"><span>Time</span><b>'+fmtTime(s.elapsed)+'</b></div>'+
-      '</div>'+
-      '<div class="chart-row">'+
-        '<div class="dough">'+doughnutSVG(sum.wrongByType)+'</div>'+
-        '<div class="legend"><h3>Wrong Answers by Question Type</h3>'+
-          (doughnutLegend(sum.wrongByType) || '<p class="muted">No wrong answers this time. Great job!</p>')+'</div>'+
-      '</div>'+
-      '<div class="toolbar">'+
-        '<button class="btn primary" data-action="redo-all">Practice Again</button>'+
-        '<button class="btn ghost" data-action="redo-wrong" '+(allRight?'disabled':'')+'>Redo wrong items only</button>'+
-      '</div>'+
+  return '<div class="card summary practice-summary" id="practiceSummary">'+
+    '<h2>Practice Results</h2>'+
+    '<div class="sum-stats">'+
+      '<div class="sum-num"><span>Score</span><b>'+sum.totalScore+' / '+sum.totalMarks+'</b></div>'+
+      '<div class="sum-num"><span>Accuracy</span><b>'+sum.acc+'%</b>'+
+        '<small>'+sum.correctCount+' / '+sum.total+' fully correct</small></div>'+
+      '<div class="sum-num"><span>Time</span><b>'+fmtTime(s.elapsed || (Date.now()-s.startTime))+'</b></div>'+
     '</div>'+
-    '<h2 class="sec-title">Item-by-item Feedback</h2>'+ cards +
+    '<div class="chart-row">'+
+      '<div class="dough">'+doughnutSVG(sum.wrongByType)+'</div>'+
+      '<div class="legend"><h3>Mistakes by question type</h3>'+
+        (doughnutLegend(sum.wrongByType) || '<p class="muted">No mistakes this time - well done!</p>')+'</div>'+
+    '</div>'+
+    '<div class="toolbar">'+
+      '<button class="btn primary" data-action="redo-all">Practice Again</button>'+
+      '<button class="btn ghost" data-action="redo-wrong" '+(allRight?'disabled':'')+'>Redo Wrong Questions</button>'+
+    '</div>'+
+  '</div>';
+}
+/* ONE big question (one passage) per screen.  The bottom-right button is
+   Submit until the question is graded, then Next / View results. */
+function renderPracticePage(){
+  const s = state.student, n = s.questions.length;
+  if (!n) return '<div class="wrap"><div class="card empty-card">No questions in this practice.</div></div>';
+  const i = Math.max(0, Math.min(n - 1, s.qIndex));
+  s.qIndex = i;
+  const q = s.questions[i];
+  const graded = gradedQuestion(q);
+  const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
+  const resume = practiceResumeIndex();
+  const reviewing = (i !== resume) && !s.submitted;
+  const pct = Math.round(s.cursor / n * 100);
+
+  const input = hasOptions(q)
+    ? renderRadioOptions(q, i, ans)
+    : (vis(q) ? '' : '<textarea class="answer-area" rows="3" placeholder="Type your answer here..." '+
+        'data-field="student-answer" data-qid="'+esc(q.id)+'">'+esc(ans)+'</textarea>');
+
+  const card = '<section class="qcard" id="practiceQuestion">'+
+    '<div class="qcard-head"><span class="qno">'+(i+1)+'</span> '+
+      '<span class="src">'+esc(sourceTag(q))+'</span> '+
+      '<span class="marks">('+numMarks(q)+' marks)</span> '+
+      (graded ? '<span class="status ok">Submitted</span>'
+              : '<span class="status part">Not submitted</span>')+'</div>'+
+    passageHtml(q)+questionVisual(q,{interactive:true, ans:ans})+stemHtml(q)+input+
+    (graded ? '<div class="locked-note">This question is submitted. Use Previous to review an '+
+              'earlier question, or continue to the next one.</div>' : '')+
+  '</section>';
+
+  const head = '<div class="card pract-head">'+
+    '<div class="practice-progress">'+
+      '<b>'+esc(s.label)+'</b>'+
+      '<span class="pp-num">Question '+(i+1)+' of '+n+'</span>'+
+      '<span class="pp-track"><span class="pp-fill" style="width:'+pct+'%"></span></span>'+
+      '<span class="muted">'+s.cursor+' / '+n+' submitted</span>'+
+      '<span>Time <span id="liveTimer" class="timer">'+
+        fmtTime(s.submitted ? s.elapsed : (Date.now()-s.startTime))+'</span></span>'+
+    '</div>'+
+    '<div class="toolbar">'+
+      (s.submitted ? '<button class="btn ghost" data-action="view-results">View results</button>' : '')+
+      '<button class="btn ghost" data-action="student-back">Exit practice</button>'+
+    '</div>'+
+  '</div>';
+
+  let left = '<button class="btn ghost" data-action="prev-question"'+(i===0?' disabled':'')+
+             '>Previous question</button>';
+  if (reviewing)
+    left += '<button class="btn ghost" data-action="resume-question">Back to Question '+(resume+1)+'</button>';
+  let right;
+  if (!graded){
+    right = '<button class="btn primary" data-action="submit">Submit answer</button>';
+  } else if (i < n-1){
+    right = '<button class="btn primary" data-action="next-question">Next question</button>';
+  } else if (s.submitted){
+    right = '<button class="btn primary" data-action="view-results">View results</button>';
+  } else {
+    right = '<button class="btn primary" data-action="resume-question">Back to Question '+(resume+1)+'</button>';
+  }
+  const rr = s.results[q.id];
+  const note = graded
+    ? '<span class="bar-note has-result">Score '+rr.score+' / '+numMarks(q)+
+      ' · Reference answer: '+esc(modelAnswer(q))+'</span>'
+    : '<span class="bar-note">Answer on the scan, then press Submit to see the score and answer.</span>';
+  const bar = '<div class="practice-bar">'+
+    '<div class="toolbar">'+left+'</div>'+
+    note+
+    '<div class="bar-right">'+right+'</div>'+
+  '</div>';
+
+  return '<div class="wrap">'+ head +
+    (s.submitted ? practiceSummaryCard() : '') +
+    card + (graded ? practiceFeedback(q) : '') + bar +
   '</div>';
 }
 function renderStudent(){
@@ -1204,7 +1293,7 @@ function renderStudent(){
            'The data file data/question_bank.json could not be read. '+
            'Check your connection and refresh to start.</div></div>';
   if (!state.student.active) return renderStudentSetup();
-  return state.student.submitted ? renderStudentResults() : renderStudentForm();
+  return renderPracticePage();
 }
 
 /* ============================================================
@@ -1416,12 +1505,33 @@ function renderView(){
   if (state.tab === 'student')   return renderStudent();
   return renderWrongbook();
 }
+/* Once a question has been graded its answers are frozen, but still visible. */
+function lockPracticeInputs(){
+  const s = state.student;
+  if (state.tab !== 'student' || !s.active) return;
+  const q = s.questions[s.qIndex];
+  if (!q || !s.results[q.id]) return;
+  const card = document.getElementById('practiceQuestion');
+  if (!card || !card.querySelectorAll) return;
+  Array.prototype.forEach.call(card.querySelectorAll('input, textarea, .draw-surface'), function(el){
+    const tag = el.tagName;
+    if (tag === 'INPUT'){
+      if (el.type === 'radio' || el.type === 'checkbox') el.disabled = true;
+      else if (el.type === 'text') el.readOnly = true;
+    } else if (tag === 'TEXTAREA'){
+      el.readOnly = true;
+    } else if (el.style){
+      el.style.pointerEvents = 'none';
+    }
+  });
+}
 function render(){
   const app = document.getElementById('app');
   app.innerHTML = renderHeader() + renderTabs() +
     '<main class="view" id="view">'+renderView()+'</main>' + renderFooter();
   updatePrintArea();
   ensureTimer();
+  lockPracticeInputs();
 }
 
 /* ============================================================
@@ -1504,6 +1614,16 @@ function onClick(e){
     case 'start-practice': startPracticeCustom(); break;
     case 'student-back':   state.student.active = false; render(); break;
     case 'submit':         submitPractice(); break;
+    case 'prev-question':  gotoQuestion(state.student.qIndex - 1); break;
+    case 'next-question':  gotoQuestion(state.student.qIndex + 1); break;
+    case 'resume-question':gotoQuestion(practiceResumeIndex()); break;
+    case 'view-results': {
+      const el = document.getElementById('practiceSummary');
+      if (el && el.scrollIntoView){
+        try{ el.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){ scrollTop(); }
+      } else scrollTop();
+      break;
+    }
     case 'override-correct': overrideResult(qid, true); break;
     case 'override-wrong':   overrideResult(qid, false); break;
     case 'add-wrong':      addWrongFromResult(qid); break;

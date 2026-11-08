@@ -159,7 +159,7 @@ See `NOTICE.md` for sources and takedown information.
 
 The app is **image first**. OCR text is never shown as the passage or the
 question for passage-based items: the original scan is the authoritative
-version.  Each of the 827 visual questions carries a `visual` object:
+version.  Every passage-based question carries a `visual` object:
 
 | Field | Meaning |
 | --- | --- |
@@ -180,8 +180,9 @@ Behaviour by item type:
 - **Comprehension / Grammar / Vocabulary Cloze** - the whole passage is scanned
   and **every printed blank of that passage carries a fillable box**. Each box
   belongs to the question printed next to it, so the whole passage can be
-  completed on the scan; an "Your answer" row below the scan mirrors the box of
-  the current question and stays in sync with it.
+  completed on the scan. There is deliberately no second row of answer fields
+  below the picture - the boxes on the scan are the only answer inputs. Blank
+  page margins above and below the crop are removed.
 - **Editing** - the whole exercise is scanned with a box at the correction.
 - **Sentence synthesis** - each sub-question is cropped; every underlined part
   gets its own box. With a printed connector, boxes appear before and after it.
@@ -197,3 +198,20 @@ the Paper Builder, press "Practice online (auto-graded)" and students answer on
 the web, typing straight into the boxes on each question's own scan. Every
 on-screen view is fillable. Keep `visuals/` next to `index.html` for offline
 copies.
+
+
+## 7. Practice online (one question at a time)
+
+Press **Practice online (auto-graded)** in the Paper Builder to start a session.
+The screen shows exactly ONE big question (one passage / one article) at a time:
+
+| Control | Where | What it does |
+| --- | --- | --- |
+| **Submit answer** | bottom right | Grades the current question and only then reveals its score, the reference answer and the explanation. The inputs lock so the answer cannot be changed afterwards. |
+| **Next question** | bottom right | Appears after submitting; moves on to the next question. |
+| **Previous question** | bottom left | Steps back through questions already done, with their answers and scores still visible. |
+| **Back to Question N** | bottom left | Shown while reviewing an old question; jumps straight back to the question the student was working on (e.g. reviewing set 1 while set 4 was done resumes at set 5). |
+| **View results** | top / bottom right | Once every question is submitted, scrolls to the score, accuracy, time and mistake chart. |
+
+Progress (`n / N submitted`) and a progress bar are always visible. The same
+fillable scans are used on desktop and phone.

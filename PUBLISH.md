@@ -56,7 +56,9 @@ exam page, so a Comprehension Cloze item can never show a Sentence Manipulation
 item printed on the same page. `visuals/<pdf-stem>/` holds `pNN.jpg` source
 pages plus `c_*.jpg` (one cloze/editing passage with its numbered blanks),
 `a_*.jpg` (reading passage with the white margins removed), `q_*.jpg` and
-`s_*.jpg` (one individual question). Every reading, cloze, editing, synthesis,
-table and matching item is answered on its scan: text boxes are placed on the
-printed blanks and there is a mirrored answer row below. Rebuilding requires
-`work/build_visuals.py` followed by `work/build_cloud.py`.
+`s_*.jpg` (one individual question). Blank white margins are trimmed off every
+crop by `work/postprocess_bank.py`, which also reprojects the answer boxes so
+they stay exactly on the printed blanks. Cloze, editing and synthesis items
+are answered ONLY in the boxes drawn on the scan - there is no second row of
+answer fields underneath. Rebuilding requires `work/build_visuals.py`,
+`work/postprocess_bank.py`, then `work/build_cloud.py`.
