@@ -185,6 +185,14 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .feedback-inline.is-ok{border-left-color:var(--green)}
 .locked-note{background:var(--accent-soft);color:var(--accent-dark);border-radius:8px;
   padding:8px 12px;font-size:13px;margin-top:12px}
+/* Paged Paper Builder preview: one big question (one article) per screen */
+.pq-progress{margin:2px 0 12px;padding:8px 0;border-bottom:1px solid var(--border-soft)}
+.pq-jump{margin-left:6px;font-size:12px;color:var(--muted)}
+.pq-jump select{font-size:13px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text)}
+.pq-nav{border-radius:12px}
+.pq-nav .bar-note{flex:1 1 auto}
+/* two halves of one long passage crop read as a single continuous scan */
+.visual > .shot-wrap + .shot-wrap{margin-top:0;border-top:0;border-top-left-radius:0;border-top-right-radius:0}
 @media (max-width:680px){
   .practice-bar{padding:8px 10px;gap:6px}
   .practice-bar .btn{padding:9px 10px;font-size:13px;touch-action:manipulation}
@@ -662,6 +670,8 @@ const state = {
   drawCount: 10,
   paper: null,                // generated paper { title, date, questions[] }
   showAnswers: false,         // teacher preview: show answers & explanations
+  paperIndex: 0,              // teacher preview: ONE big question on screen
+  paperFurthest: 0,           // furthest page reached (for the resume button)
   student: {                  // active practice session - ONE question on screen
     active:false, questions:[], answers:{}, submitted:false,
     results:{}, startTime:0, elapsed:0, label:'', wbRedo:false,
@@ -810,16 +820,21 @@ function renderQuestionBlock(q, i, showAnswers, interactive){
       : '')+
   '</section>';
 }
-function paperHTML(paper, showAnswers, interactive){
-  const qs = (paper && Array.isArray(paper.questions)) ? paper.questions : [];
+function paperHeadHTML(paper, qs){
   const total = qs.reduce((s,q) => s + numMarks(q), 0);
-  const head = '<div class="print-head">'+
+  return '<div class="print-head">'+
     '<h1>'+esc(paper.title || 'P3 English Generated Paper')+'</h1>'+
     '<p class="ph-sub">Date: '+esc(paper.date || todayStr())+' · Total '+qs.length+' questions · Full marks '+total+' marks</p>'+
     '<p class="ph-line">Name: ________________ Class: ____________ Score: ____________</p>'+
   '</div>';
-  return head + (qs.length ? qs.map((q,i) => renderQuestionBlock(q,i,showAnswers,interactive)).join('')
-                           : '<p class="muted">This paper has no questions.</p>');
+}
+/* The PRINT copy still contains every question.  The on-screen preview is
+   paged: exactly one big question (one article) is rendered at a time. */
+function paperHTML(paper, showAnswers, interactive){
+  const qs = (paper && Array.isArray(paper.questions)) ? paper.questions : [];
+  return paperHeadHTML(paper, qs) +
+    (qs.length ? qs.map((q,i) => renderQuestionBlock(q,i,showAnswers,interactive)).join('')
+               : '<p class="muted">This paper has no questions.</p>');
 }
 
 /* ============================================================
@@ -962,19 +977,42 @@ function buildFilterPanel(){
 function makePaper(questions){
   return { title:'P3 English Generated Paper · '+todayStr(), date:todayStr(), generatedAt:Date.now(), questions:questions.slice() };
 }
+function resetPaperPaging(){
+  state.paperIndex = 0;
+  state.paperFurthest = 0;
+}
+function scrollPaperIntoView(){
+  const el = document.getElementById('paperSurface');
+  if (el && el.scrollIntoView){
+    try{ el.scrollIntoView({block:'start'}); }catch(e){ scrollTop(); }
+  } else scrollTop();
+}
 function genRandom(){
   const pool = matchedQuestions();
   if (!pool.length){ flash('No questions match the current filters, so a paper cannot be generated.'); return; }
   state.paper = makePaper(shuffle(pool).slice(0, Math.min(state.drawCount, pool.length)));
   state.showAnswers = false;
+  resetPaperPaging();
   render();
+  scrollPaperIntoView();
 }
 function genAll(){
   const pool = matchedQuestions();
   if (!pool.length){ flash('No questions match the current filters, so a paper cannot be generated.'); return; }
   state.paper = makePaper(pool);
   state.showAnswers = false;
+  resetPaperPaging();
   render();
+  scrollPaperIntoView();
+}
+function gotoPaperQuestion(i){
+  const n = state.paper && state.paper.questions ? state.paper.questions.length : 0;
+  if (!n) return;
+  const k = Math.min(n - 1, Math.max(0, Number(i) || 0));
+  state.paperIndex = k;
+  state.paperFurthest = Math.max(state.paperFurthest || 0, k);
+  render();
+  scrollPaperIntoView();
 }
 function exportPaper(){
   if (!state.paper){ flash('Please generate a paper first.'); return; }
@@ -987,8 +1025,42 @@ function exportPaper(){
   flash('Paper JSON exported.');
 }
 function renderTeacherPaper(){
-  if (!state.paper)
+  const p = state.paper;
+  const qs = (p && Array.isArray(p.questions)) ? p.questions : [];
+  if (!qs.length)
     return '<div class="card empty-card">No paper generated yet.<br>Set your filters, then click "Generate Random Paper" or "Select All" to preview.</div>';
+  const n = qs.length;
+  const i = Math.min(n - 1, Math.max(0, state.paperIndex || 0));
+  state.paperIndex = i;
+  state.paperFurthest = Math.min(n - 1, Math.max(state.paperFurthest || 0, i));
+  const furthest = state.paperFurthest;
+  const pct = Math.round((i + 1) / n * 100);
+
+  const head = paperHeadHTML(p, qs);
+  const progress = '<div class="practice-progress pq-progress">'+
+    '<span class="pp-num">Question '+(i+1)+' of '+n+'</span>'+
+    '<span class="pp-track"><span class="pp-fill" style="width:'+pct+'%"></span></span>'+
+    '<span class="muted">One question per screen</span>'+
+  '</div>';
+  /* ONLY this question is in the DOM - there is no next article to scroll to */
+  const body = '<div id="paperQuestion">'+renderQuestionBlock(qs[i], i, state.showAnswers, true)+'</div>';
+
+  let opts = '';
+  for (let k = 0; k < n; k++)
+    opts += '<option value="'+k+'"'+(k===i?' selected':'')+'>'+(k+1)+'</option>';
+  let left = '<button class="btn ghost" data-action="paper-prev"'+(i===0?' disabled':'')+
+             '>Previous question</button>';
+  if (i < furthest)
+    left += '<button class="btn ghost" data-action="paper-resume">Back to Question '+(furthest+1)+'</button>';
+  const jump = '<label class="sel pq-jump">Jump to: <select data-field="paper-goto">'+opts+'</select></label>';
+  const right = '<button class="btn primary" data-action="paper-next"'+(i>=n-1?' disabled':'')+
+                '>Next question</button>';
+  const bar = '<div class="practice-bar pq-nav">'+
+    '<div class="toolbar">'+left+jump+'</div>'+
+    '<span class="bar-note">One article per screen - use Next to see the next one.</span>'+
+    '<div class="bar-right">'+right+'</div>'+
+  '</div>';
+
   return '<div class="card">'+
     '<div class="toolbar paper-toolbar">'+
       '<label class="ck"><input type="checkbox" data-field="show-answers" '+(state.showAnswers?'checked':'')+'> Show answers and explanations</label>'+
@@ -997,7 +1069,7 @@ function renderTeacherPaper(){
       '<button class="btn ghost" data-action="print-paper">Print / Save as PDF</button>'+
       '<button class="btn ghost" data-action="export-json">Export JSON</button>'+
     '</div>'+
-    '<div class="paper-surface">'+paperHTML(state.paper, state.showAnswers, true)+'</div>'+
+    '<div class="paper-surface" id="paperSurface">'+head+progress+body+bar+'</div>'+
   '</div>';
 }
 function renderTeacher(){
@@ -1572,6 +1644,7 @@ function handleField(el){
     case 'only-doubt':   state.filters.onlyDoubt = el.checked; updateMatchCount(); break;
     case 'wrong-mode':   state.filters.wrongMode = el.value; updateMatchCount(); break;
     case 'show-answers': state.showAnswers = el.checked; render(); break;
+    case 'paper-goto':   gotoPaperQuestion(parseInt(el.value, 10)); break;
     case 'autoremove':   state.autoRemove = el.checked; break;
     case 'wb-sort':      state.wbSort = el.value; render(); break;
   }
@@ -1580,7 +1653,7 @@ function onInput(e){
   const f = e.target.dataset && e.target.dataset.field;
   if (!f) return;
   // These fire both input + change; handle them only once (on input) where possible.
-  if (['filter','only-doubt','show-answers','autoremove','wb-sort','wrong-mode'].indexOf(f) !== -1) return;
+  if (['filter','only-doubt','show-answers','autoremove','wb-sort','wrong-mode','paper-goto'].indexOf(f) !== -1) return;
   handleField(e.target);
 }
 function onChange(e){ if (e.target.dataset && e.target.dataset.field) handleField(e.target); }
@@ -1594,6 +1667,9 @@ function onClick(e){
     case 'reset-filters':  resetFilters(); render(); break;
     case 'gen-random':     genRandom(); break;
     case 'gen-all':        genAll(); break;
+    case 'paper-prev':     gotoPaperQuestion(state.paperIndex - 1); break;
+    case 'paper-next':     gotoPaperQuestion(state.paperIndex + 1); break;
+    case 'paper-resume':   gotoPaperQuestion(state.paperFurthest); break;
     case 'toggle-answers': state.showAnswers = !state.showAnswers; render(); break;
     case 'print-paper':    updatePrintArea(); window.print(); break;
     case 'practice-paper': {
