@@ -9,7 +9,7 @@ tracking. Open the link on a phone, tablet or laptop and start practising.
 - Works offline after the first visit (PWA + service worker)
 - **Open JSON data** so any app, script or AI agent can consume the bank
 - Entirely in English, including all labels, tags, topics and annotations
-- **Every reading-comprehension question carries its article** (full text plus a scan of the original page)
+- **Image-first answering**: full passage scans, per-question crops and answer boxes printed on the blanks (no OCR text shown as the question)
 
 > **Live site:** https://emilyimemily.github.io/p3-english-question-bank/
 > Public repository; GitHub Pages serves `main` / `/ (root)` - the same setup as
@@ -155,19 +155,36 @@ original working files are deliberately **not** published here.
 See `NOTICE.md` for sources and takedown information.
 
 
-## 6. Reading passages
+## 6. Scanned, fillable questions
 
-Every passage-based question (reading comprehension, comprehension cloze, grammar
-and vocabulary cloze, visual text) carries its article, not just a short context
-window:
+The app is **image first**. OCR text is never shown as the passage or the
+question for passage-based items: the original scan is the authoritative
+version.  Each of the 827 visual questions carries a `visual` object:
 
 | Field | Meaning |
 | --- | --- |
-| `passage` | Full article text reconstructed from the OCR, shared by all questions in the same comprehension section. |
-| `passage_images` | Paths to the scanned original exam page(s); click to open full size. |
-| `passage_pages` | 1-based page numbers in the source PDF. |
+| `mode` | `reading`, `cloze`, `editing`, `synthesis`, `truefalse`, `tick` or `matching` |
+| `article_images` | Complete, untruncated scans of the whole passage / exercise page(s) |
+| `question_images` | A crop of that individual question from the original paper |
+| `overlays` | Answer boxes positioned (in percent) on the scan's printed blanks |
+| `table` | Editable True/False grid: text fields or tick boxes in the cells |
+| `lines` | Enables freehand connecting lines on the scan for matching items |
 
-`passages/` contains 211 JPEG scans (~18 MB). OCR cannot recover every line or
-any poster artwork, so the scan is the authoritative version; the text is there
-for searching and quick reading. Listening-comprehension items have no printed
-passage and are supplied as scans only.
+Behaviour by item type:
+
+- **Reading comprehension** - full passage scan, then the question scan, then an
+  answer box directly below the question scan. The article is never truncated to
+  fit one question.
+- **Comprehension / Grammar / Vocabulary Cloze** - the whole passage is scanned
+  and a text box sits on each printed blank.
+- **Editing** - the whole exercise is scanned with a box at the correction.
+- **Sentence synthesis** - each sub-question is cropped; every underlined part
+  gets its own box. With a printed connector, boxes appear before and after it.
+- **True / False tables** - an HTML table with text fields, or tick boxes when
+  the paper says "tick".
+- **Matching** - drag on the scan to draw connecting lines (a text answer is
+  also accepted).
+
+The same layout is used in the paper builder, practice, feedback, wrong book and
+print views. `visuals/` holds 301 full-page scans and 437 question crops (~40 MB);
+keep it next to `index.html` for offline copies.

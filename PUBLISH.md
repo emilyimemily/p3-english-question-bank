@@ -49,9 +49,11 @@ CDNs; making the repo private again cannot recall those copies.
 `Allow: /` to `Disallow: /` and push. See `NOTICE.md` for source attribution and
 takedown information.
 
-## Reading passages
+## Scanned questions
 
-`passages/<pdf-stem>/pNN.jpg` holds 211 scanned exam pages (~18 MB) showing the
-original articles, cloze texts and visual texts. They are ordinary static files;
-keep that folder next to `index.html` when copying the site offline. Rebuilding
-the bank requires `work/attach_passages.py` followed by `work/build_cloud.py`.
+`visuals/<pdf-stem>/pNN.jpg` holds 301 full-page scans and 437 per-question
+crops (~40 MB). Every reading, cloze, editing, synthesis, table and matching
+item is answered on the scan itself: the app never substitutes OCR text for the
+original paper. Keep that folder next to `index.html` when copying the site
+offline. Rebuilding requires `work/build_visuals.py` followed by
+`work/build_cloud.py`.

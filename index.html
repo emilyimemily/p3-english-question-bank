@@ -129,6 +129,29 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .pq-meta{background:var(--bg);border-radius:8px;padding:8px 12px;font-size:13px;margin-top:8px}
 .pq-meta p{margin:4px 0}
 
+/* ===== Image-first question rendering ===== */
+.visual{margin:10px 0}
+.visual-label{font-size:12px;font-weight:700;color:var(--accent-dark);margin:12px 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.visual-label .tag{font-weight:500;color:var(--muted);font-size:11px}
+.visual-note{font-size:12px;color:var(--muted);margin:6px 0}
+.shot-wrap{position:relative;display:block;width:100%;max-width:900px;margin:8px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff}
+.shot-link{display:block}
+.shot-img{display:block;width:100%;height:auto}
+.shot-input{position:absolute;box-sizing:border-box;border:1px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.94);color:#132a5e;font-size:13px;padding:2px 6px;min-width:0;min-height:0;box-shadow:0 0 0 2px rgba(47,91,215,.12);z-index:3}
+.shot-input:focus{outline:2px solid #2f5bd7;background:#fff}
+.shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none}
+.visual-answer{margin-top:10px}
+.visual-answer .answer-area{min-height:76px}
+.vis-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+.vis-table th,.vis-table td{border:1px solid var(--border);padding:8px 10px;text-align:left;vertical-align:middle}
+.vis-table th{background:var(--bg);font-weight:700}
+.vis-table td.center,.vis-table th.center{text-align:center;width:92px}
+.vis-table input[type="text"]{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:6px;padding:6px 8px}
+.vis-table input[type="checkbox"]{width:20px;height:20px;accent-color:var(--accent);cursor:pointer}
+.draw-surface{position:absolute;inset:0;width:100%;height:100%;z-index:2;cursor:crosshair;touch-action:none}
+.draw-surface line{stroke:#d92d20;stroke-width:.4;stroke-linecap:round}
+.draw-tools{display:flex;gap:10px;align-items:center;margin:6px 0;font-size:12px;color:var(--muted);flex-wrap:wrap}
+
 /* ===== Student practice form ===== */
 .pract-head{display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .timer{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent)}
@@ -237,6 +260,13 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
   .passage-scan .scan-label{color:#222;font-size:10px}
   .passage-scan img{max-height:8cm;object-fit:contain;object-position:top;border-color:#bbb}
   .blank-lines{background:repeating-linear-gradient(to bottom,transparent 0,transparent 25px,#bbb 25px,#bbb 26px)}
+  .visual-label{color:#222;font-size:10px}
+  .visual-label .tag,.visual-note,.draw-tools{display:none}
+  .shot-wrap{max-width:14cm;border-color:#bbb;break-inside:avoid;page-break-inside:avoid}
+  .shot-input-empty{background:#fff;border:1px solid #555}
+  .vis-table th,.vis-table td{border-color:#888;padding:4px 6px;font-size:11px}
+  .vis-table input[type="text"]{border:1px solid #888;min-height:20px}
+  .draw-surface{display:none}
 }
 </style>
 </head>
@@ -260,8 +290,155 @@ function esc(s){
 function allQuestions(){
   return (BANK && Array.isArray(BANK.questions)) ? BANK.questions.filter(q => q && typeof q === 'object') : [];
 }
-/* Reading passage / context for cloze & comprehension items (collapsible in screen, open in print) */
+/* ============================================================
+   0b. Image-first answering: scanned pages, on-image boxes,
+       editable True/False tables and line-drawing for matching
+   ============================================================ */
+function vis(q){ return (q && q.visual && typeof q.visual === 'object') ? q.visual : null; }
+function visList(q, which){
+  const v = vis(q); if (!v) return [];
+  const a = (which === 'article') ? v.article_images : v.question_images;
+  return Array.isArray(a) ? a.filter(Boolean) : [];
+}
+function visParts(qid){
+  const p = state.visualParts[qid];
+  return (p && typeof p === 'object') ? p : {};
+}
+function syncVisual(qid){
+  if (!qid) return;
+  const nodes = document.querySelectorAll('[data-field="vpart"][data-qid="'+qid+'"]');
+  const parts = {};
+  Array.prototype.forEach.call(nodes, function(el){
+    const part = el.dataset.part || ('p'+Object.keys(parts).length);
+    let val = '';
+    if (el.type === 'checkbox') val = el.checked ? (el.value || 'yes') : '';
+    else val = String(el.value === null || el.value === undefined ? '' : el.value);
+    const full = val ? (el.dataset.prefix || '') + val : '';
+    if (full || !(part in parts)) parts[part] = full;
+  });
+  state.visualParts[qid] = parts;
+  state.student.answers[qid] = Object.keys(parts).sort()
+    .filter(function(k){ return k.charAt(0) !== '_'; })
+    .map(function(k){ return parts[k]; }).filter(Boolean).join(' ');
+}
+function shotInputHtml(q, o, i, interactive){
+  const st = 'left:'+Number(o.x||0)+'%;top:'+Number(o.y||0)+'%;width:'+Number(o.w||10)+'%;height:'+Number(o.h||4)+'%';
+  if (!interactive) return '<div class="shot-input shot-input-empty" style="'+st+'"></div>';
+  return '<input class="shot-input" type="text" style="'+st+'" data-field="vpart" data-qid="'+esc(q.id)+
+         '" data-part="o'+i+'" value="'+esc(visParts(q.id)['o'+i] || '')+
+         '" aria-label="'+esc(o.label || 'Answer')+' answer box">';
+}
+function visualImageHtml(q, which, interactive){
+  const v = vis(q), imgs = visList(q, which);
+  if (!v || !imgs.length) return '';
+  const withBoxes = (v.overlay_on === which);
+  let out = '';
+  imgs.forEach(function(src, i){
+    let boxes = '';
+    if (withBoxes){
+      (v.overlays || []).filter(function(o){ return Number(o.img || 0) === i; })
+        .forEach(function(o, k){ boxes += shotInputHtml(q, o, k, interactive); });
+    }
+    let surface = '';
+    if (withBoxes && v.lines && interactive){
+      let svgLines = '';
+      try {
+        JSON.parse(visParts(q.id)['_lines'] || '[]').forEach(function(s){
+          svgLines += '<line x1="'+s[0]+'" y1="'+s[1]+'" x2="'+s[2]+'" y2="'+s[3]+'"></line>';
+        });
+      } catch(e) {}
+      surface = '<svg class="draw-surface" data-role="draw-surface" data-qid="'+esc(q.id)+
+                '" viewBox="0 0 100 100" preserveAspectRatio="none">'+svgLines+'</svg>';
+    }
+    out += '<div class="shot-wrap"><a class="shot-link" href="'+esc(src)+'" target="_blank" rel="noopener">'+
+           '<img class="shot-img" src="'+esc(src)+'" alt="Scanned exam page" loading="lazy"></a>'+
+           boxes + surface + '</div>';
+  });
+  return out;
+}
+function visTableHtml(q, interactive){
+  const v = vis(q), t = v && v.table;
+  if (!t) return '';
+  const rows = Array.isArray(t.rows) ? t.rows : [];
+  const tick = t.input === 'tick';
+  const parts = visParts(q.id);
+  let h = '<table class="vis-table"><thead><tr><th>No.</th><th>Statement</th>'+
+          '<th class="center">True</th><th class="center">False</th></tr></thead><tbody>';
+  rows.forEach(function(r, i){
+    const pre = r.no ? ('Q'+r.no+'=') : '';
+    h += '<tr><td>'+esc(r.no || '')+'</td><td>'+esc(r.text || '')+'</td>';
+    ['True','False'].forEach(function(word, j){
+      const part = 'r'+i+'_'+j;
+      if (tick){
+        const on = parts[part] === (pre+word) ? ' checked' : '';
+        h += '<td class="center"><input type="checkbox" data-field="vpart" data-qid="'+esc(q.id)+
+             '" data-part="'+part+'" data-prefix="'+esc(pre)+'" data-group="'+esc(q.id+'_'+i)+
+             '" value="'+word+'"'+on+(interactive ? '' : ' disabled')+'></td>';
+      } else {
+        const raw = String(parts[part] || '');
+        const val = raw.indexOf(pre) === 0 ? raw.slice(pre.length) : raw;
+        h += '<td class="center"><input type="text" data-field="vpart" data-qid="'+esc(q.id)+
+             '" data-part="'+part+'" data-prefix="'+esc(pre)+'" value="'+esc(val)+'"'+
+             (interactive ? ' placeholder="T / F"' : ' disabled')+'></td>';
+      }
+    });
+    h += '</tr>';
+  });
+  return h + '</tbody></table>';
+}
+function visualAnswerHtml(q, interactive, ans){
+  const v = vis(q); if (!v) return '';
+  const mode = v.mode || 'reading';
+  const hasBoxes = (v.overlays || []).length > 0;
+  const needsText = (mode === 'reading' || mode === 'matching' ||
+                     (mode === 'synthesis' && !hasBoxes));
+  if (interactive){
+    let h = '';
+    if (v.table) h += visTableHtml(q, true);
+    if (v.lines){
+      h += '<div class="draw-tools"><span>Drag on the picture above to draw a connecting line.</span>'+
+           '<button class="btn mini" type="button" data-action="clear-lines" data-qid="'+esc(q.id)+'">Clear lines</button>'+
+           '<input type="hidden" data-field="vpart" data-qid="'+esc(q.id)+'" data-part="_lines" value="'+
+           esc(visParts(q.id)['_lines'] || '[]')+'"></div>';
+    }
+    if (needsText){
+      const asPart = mode !== 'reading';
+      const pname = mode === 'matching' ? 'mtext' : 's0';
+      const val = asPart ? (visParts(q.id)[pname] || '') : ans;
+      h += '<div class="visual-answer"><div class="blank-label">Your answer (write below the question)</div>'+
+           '<textarea class="answer-area" rows="3" data-field="'+(asPart ? 'vpart' : 'student-answer')+'"'+
+           (asPart ? ' data-part="'+pname+'"' : '')+' data-qid="'+esc(q.id)+
+           '" placeholder="Type your answer here...">'+esc(val)+'</textarea></div>';
+    }
+    return h;
+  }
+  let h = '';
+  if (v.table) h += visTableHtml(q, false);
+  if (needsText) h += '<div class="blank-label">Answer:</div><div class="blank-lines"></div>';
+  return h;
+}
+function questionVisual(q, opts){
+  const v = vis(q); if (!v) return '';
+  const interactive = !!(opts && opts.interactive);
+  const ans = (opts && opts.ans !== undefined && opts.ans !== null) ? String(opts.ans) : '';
+  const arts = visList(q, 'article'), qs = visList(q, 'question');
+  let h = '<div class="visual">';
+  if (arts.length){
+    h += '<div class="visual-label">Reading Passage / Full Text <span class="tag">Complete scanned page(s) - click to open full size</span></div>';
+    h += visualImageHtml(q, 'article', interactive && (v.overlay_on === 'article' || !!v.lines));
+  }
+  if (qs.length){
+    h += '<div class="visual-label">Question <span class="tag">Scanned from the original paper - click to open full size</span></div>';
+    h += visualImageHtml(q, 'question', interactive && v.overlay_on === 'question');
+  }
+  h += visualAnswerHtml(q, interactive, ans);
+  return h + '</div>';
+}
+function stemHtml(q){ return vis(q) ? '' : '<p class="stem">'+esc(q.stem)+'</p>'; }
+
+/* Reading passage / context for non-visual items (visual ones use the scan) */
 function passageHtml(q){
+  if (vis(q)) return '';
   const p = q && q.passage ? String(q.passage).trim() : '';
   const imgs = (q && Array.isArray(q.passage_images)) ? q.passage_images.filter(Boolean) : [];
   if (!p && !imgs.length) return '';
@@ -373,7 +550,8 @@ const state = {
     results:{}, startTime:0, elapsed:0, label:'', wbRedo:false
   },
   autoRemove: true,           // Auto-remove from wrong book on correct answer
-  wbSort: 'topic'             // grouping key for the wrong-book list
+  wbSort: 'topic',            // grouping key for the wrong-book list
+  visualParts: {}             // per-question values typed on scanned images
 };
 function resetFilters(){ state.filters = emptyFilters(); }
 
@@ -497,10 +675,10 @@ function renderQuestionBlock(q, i, showAnswers){
   return '<section class="pq">'+
     '<div class="pq-head"><strong>'+(i+1)+'.</strong> <span class="src">'+esc(sourceTag(q))+'</span> '+
       '<span class="marks">('+esc(numMarks(q))+' marks)</span></div>'+
-    passageHtml(q)+'<p class="stem">'+esc(q.stem)+'</p>'+
+    passageHtml(q)+questionVisual(q,{interactive:false})+stemHtml(q)+
     (hasOptions(q)
       ? '<div class="opts">'+renderOptionLines(q, showAnswers)+'</div>'
-      : '<div class="blank-lines"></div>')+
+      : (vis(q) ? '' : '<div class="blank-lines"></div>'))+
     (showAnswers
       ? '<div class="ans-block">'+
           '<p><b>Reference answer: </b>'+esc(modelAnswer(q))+'</p>'+
@@ -532,13 +710,29 @@ function gradeQuestion(q, answer){
   const ans = (answer === null || answer === undefined) ? '' : String(answer);
   if (hasOptions(q)){
     const key = ans.trim(), correctKey = String(q.answer === null || q.answer === undefined ? '' : q.answer).trim();
-    const correct = key !== '' && key === correctKey;
+    let correct = key !== '' && key === correctKey;
+    if (!correct && key){
+      const optText = String((q.options || {})[correctKey] || '').trim().toLowerCase();
+      if (optText && key.toLowerCase() === optText) correct = true;
+    }
     return { score: correct ? marks : 0, correct };
   }
   // Open-ended: keyword-based partial scoring.
   const kws = Array.isArray(q.keywords) ? q.keywords.filter(k => String(k).trim()) : [];
   const text = ans.toLowerCase().trim();
   if (text === '') return { score:0, correct:false };
+  const vmode = vis(q) ? String(vis(q).mode || '') : '';
+  if (vmode === 'truefalse' || vmode === 'tick'){
+    const model = String(q.answer_text || q.answer || '').trim().toLowerCase();
+    if (model === 'true' || model === 'false' || model === 't' || model === 'f'){
+      const word = model === 't' ? 'true' : model === 'f' ? 'false' : model;
+      const mine = text.split(/\s+/).filter(function(s){
+        return s.indexOf('q' + String(q.no).toLowerCase() + '=') === 0;
+      }).join(' ');
+      const hit = (mine || text).indexOf(word) !== -1;
+      return { score: hit ? marks : 0, correct: hit };
+    }
+  }
   if (kws.length){
     const hits = kws.filter(k => text.includes(String(k).toLowerCase())).length;
     if (hits === kws.length) return { score:marks, correct:true };
@@ -710,6 +904,7 @@ function startPractice(questions, opts){
     active:true, questions:questions.slice(), answers:{}, submitted:false, results:{},
     startTime:Date.now(), elapsed:0, label:(opts && opts.label) || 'Practice', wbRedo:!!(opts && opts.wbRedo)
   };
+  state.visualParts = {};
   state.tab = 'student';
   render();
   try{ window.scrollTo({top:0, behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); }
@@ -795,22 +990,25 @@ function renderStudentSetup(){
 }
 function renderRadioOptions(q, i, ans){
   const opts = q.options || {};
+  const v = vis(q);
+  const useTick = !!(v && v.tick_options);
   return '<div class="opt-list">'+Object.keys(opts).map(k =>
-    '<label class="opt"><input type="radio" name="q_'+i+'" value="'+esc(k)+
-    '" data-field="student-answer" data-qid="'+esc(q.id)+'" '+(String(ans)===String(k)?'checked':'')+
+    '<label class="opt"><input type="'+(useTick ? 'checkbox' : 'radio')+'" name="q_'+i+'" value="'+esc(k)+
+    '" data-field="'+(useTick ? 'tick-option' : 'student-answer')+'" data-qid="'+esc(q.id)+'" '+
+    (useTick ? 'data-group="'+esc(q.id+'_opt')+'" ' : '')+(String(ans)===String(k)?'checked':'')+
     '><span>'+esc(k)+'. '+esc(opts[k])+'</span></label>').join('')+'</div>';
 }
 function renderStudentForm(){
   const s = state.student;
   const cards = s.questions.map((q,i) => {
     const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
-    const input = hasOptions(q)
+    const input = vis(q) ? '' : (hasOptions(q)
       ? renderRadioOptions(q, i, ans)
-      : '<textarea class="answer-area" rows="3" placeholder="Type your answer here..." data-field="student-answer" data-qid="'+esc(q.id)+'">'+esc(ans)+'</textarea>';
+      : '<textarea class="answer-area" rows="3" placeholder="Type your answer here..." data-field="student-answer" data-qid="'+esc(q.id)+'">'+esc(ans)+'</textarea>');
     return '<section class="qcard">'+
       '<div class="qcard-head"><span class="qno">'+(i+1)+'</span> <span class="src">'+esc(sourceTag(q))+'</span> '+
         '<span class="marks">('+numMarks(q)+' marks)</span></div>'+
-      passageHtml(q)+'<p class="stem">'+esc(q.stem)+'</p>'+ input +
+      passageHtml(q)+questionVisual(q,{interactive:true, ans:ans})+stemHtml(q)+ input +
     '</section>';
   }).join('');
   return '<div class="wrap">'+
@@ -838,7 +1036,7 @@ function feedbackCard(q, i){
   const chosen = hasOptions(q) && ans !== '' ? '(you chose '+esc(ans)+'. '+esc((q.options||{})[ans] || '')+')' : '';
   return '<section class="qcard feedback">'+
     '<div class="qcard-head"><span class="qno">'+(i+1)+'</span> <span class="src">'+esc(sourceTag(q))+'</span> '+status+'</div>'+
-    passageHtml(q)+'<p class="stem">'+esc(q.stem)+'</p>'+
+    passageHtml(q)+questionVisual(q,{interactive:false})+stemHtml(q)+
     '<div class="ans-ref"><b>Reference answer: </b>'+esc(modelAnswer(q))+' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+' '+chosen+'</div>'+
     '<div class="fb-grid">'+
       '<div class="fb-row"><div class="fb-label">This item tests</div><div class="fb-body">'+esc(topic)+'</div></div>'+
@@ -948,7 +1146,7 @@ function wbItem(it, q){
     '<div class="wb-item-top"><span class="src">'+esc(sourceTag(q))+'</span>'+
       (it.mastered?'<span class="badge mastered">Mastered</span>':'')+
       '<span class="badge">Wrong '+(it.wrongCount||0)+' times</span></div>'+
-    passageHtml(q)+'<p class="stem">'+esc(q.stem)+'</p>'+
+    passageHtml(q)+questionVisual(q,{interactive:false})+stemHtml(q)+
     '<div class="wb-meta">Last answer: '+esc(last)+' · Last score: '+(it.lastScore===undefined?0:it.lastScore)+'/'+numMarks(q)+
       ' · Added: '+esc(fmtDate(it.addedAt))+'</div>'+
     '<div class="toolbar">'+
@@ -991,7 +1189,7 @@ function wrongbookPrintable(){
     return '<section class="pq">'+
       '<div class="pq-head"><strong>'+(i+1)+'.</strong> <span class="src">'+esc(sourceTag(q))+'</span> '+
         '<span class="marks">('+numMarks(q)+' marks)</span></div>'+
-      passageHtml(q)+'<p class="stem">'+esc(q.stem)+'</p>'+
+      passageHtml(q)+questionVisual(q,{interactive:false})+stemHtml(q)+
       (hasOptions(q) ? '<div class="opts">'+renderOptionLines(q,false)+'</div>' : '')+
       '<div class="pq-meta">'+
         '<p><b>Reference answer: </b>'+esc(modelAnswer(q))+'</p>'+
@@ -1120,6 +1318,26 @@ function handleField(el){
       break;
     }
     case 'student-answer': state.student.answers[el.dataset.qid] = el.value; break;
+    case 'vpart': {
+      if (el.type === 'checkbox' && el.checked && el.dataset.group){
+        Array.prototype.forEach.call(
+          document.querySelectorAll('[data-group="'+el.dataset.group+'"]'),
+          function(other){ if (other !== el) other.checked = false; });
+      }
+      syncVisual(el.dataset.qid);
+      break;
+    }
+    case 'tick-option': {
+      if (el.checked && el.dataset.group){
+        Array.prototype.forEach.call(
+          document.querySelectorAll('[data-group="'+el.dataset.group+'"]'),
+          function(other){ if (other !== el) other.checked = false; });
+        state.student.answers[el.dataset.qid] = el.value;
+      } else if (!el.checked && state.student.answers[el.dataset.qid] === el.value){
+        state.student.answers[el.dataset.qid] = '';
+      }
+      break;
+    }
     case 'filter': {
       const set = state.filters[el.dataset.dim];
       if (set){ if (el.checked) set.add(el.dataset.val); else set.delete(el.dataset.val); }
@@ -1169,6 +1387,13 @@ function onClick(e){
     case 'wb-remove':      removeWrong(qid); render(); break;
     case 'wb-master':      masterWrong(qid); render(); break;
     case 'wb-print':       updatePrintArea(); window.print(); break;
+    case 'clear-lines': {
+      const hid = document.querySelector('input[data-part="_lines"][data-qid="'+qid+'"]');
+      if (hid) hid.value = '[]';
+      const p = state.visualParts[qid] || {}; p._lines = '[]'; state.visualParts[qid] = p;
+      render();
+      break;
+    }
     case 'wb-clear':
       if (confirm('Clear the entire wrong book? This cannot be undone.')){ memWB = []; saveWB(); render(); }
       break;
@@ -1178,10 +1403,43 @@ function onClick(e){
 /* ============================================================
    13. Boot
    ============================================================ */
+/* Freehand matching lines drawn directly on the scanned question */
+let _drawStart = null;
+function drawPoint(svg, e){
+  const r = svg.getBoundingClientRect();
+  return { x: 100 * (e.clientX - r.left) / (r.width || 1),
+           y: 100 * (e.clientY - r.top) / (r.height || 1) };
+}
+function onPointerDown(e){
+  if (!e || !e.target || !e.target.closest) return;
+  const svg = e.target.closest('[data-role="draw-surface"]');
+  if (!svg || typeof svg.getBoundingClientRect !== 'function') return;
+  const p = drawPoint(svg, e);
+  _drawStart = { svg: svg, qid: svg.dataset.qid, x: p.x, y: p.y };
+}
+function onPointerUp(e){
+  if (!_drawStart || !e) return;
+  const s = _drawStart; _drawStart = null;
+  const p = drawPoint(s.svg, e);
+  if (Math.abs(p.x - s.x) + Math.abs(p.y - s.y) < 2) return;
+  const hid = document.querySelector('input[data-part="_lines"][data-qid="'+s.qid+'"]');
+  let arr = [];
+  try { arr = JSON.parse(hid ? hid.value : (visParts(s.qid)['_lines'] || '[]')); } catch(err) { arr = []; }
+  arr.push([+s.x.toFixed(2), +s.y.toFixed(2), +p.x.toFixed(2), +p.y.toFixed(2)]);
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', s.x); line.setAttribute('y1', s.y);
+  line.setAttribute('x2', p.x); line.setAttribute('y2', p.y);
+  if (s.svg.appendChild) s.svg.appendChild(line);
+  if (hid){ hid.value = JSON.stringify(arr); syncVisual(s.qid); }
+  else { const vp = state.visualParts[s.qid] || {}; vp._lines = JSON.stringify(arr); state.visualParts[s.qid] = vp; }
+}
+
 const APP = document.getElementById('app');
 APP.addEventListener('click', onClick);
 APP.addEventListener('input', onInput);
 APP.addEventListener('change', onChange);
+APP.addEventListener('pointerdown', onPointerDown);
+APP.addEventListener('pointerup', onPointerUp);
 
 /* ============================================================
    14. Cloud boot, deep links and progress portability
