@@ -240,6 +240,26 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
   .fb-label{flex:auto}
   .head-inner{flex-direction:column;align-items:flex-start}
   .paper-surface{padding:16px}
+  /* tabs scroll sideways instead of wrapping onto two cramped lines */
+  .tabs-inner{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs-inner::-webkit-scrollbar{display:none}
+  .tab{padding:12px 14px;white-space:nowrap;flex:0 0 auto;touch-action:manipulation}
+  /* answer boxes on the scan: big enough to tap, 16px stops iOS zoom-on-focus */
+  .shot-input{min-height:28px;min-width:42px;font-size:16px;padding:1px 4px;touch-action:manipulation;
+              background:rgba(255,255,255,.52)}
+  .shot-input:focus{background:#fff;z-index:6}
+  /* the mirrored "Your answer" row is the comfortable way to type on a phone */
+  .blank-row{gap:8px;padding:10px}
+  .blank-row input[type="text"]{flex:1 1 100%;min-width:0;font-size:16px;min-height:42px}
+  .blank-row .br-label{flex:0 0 100%}
+  .blank-row .br-hint{flex-basis:100%}
+  .vis-table input[type="text"]{font-size:16px;min-height:36px}
+  .vis-table td.center,.vis-table th.center{width:64px}
+  .vis-table input[type="checkbox"]{width:26px;height:26px}
+  input[type="search"],input[type="number"],select,textarea,.answer-area,.num-input{font-size:16px}
+  .btn{padding:10px 14px;touch-action:manipulation}
+  .toolbar{gap:6px}
+  .shot-wrap{max-width:100%}
 }
 
 /* ===== Dedicated print stylesheet: only the paper / wrong-book is printed ===== */
@@ -732,11 +752,11 @@ function renderWrongHints(q){
   const items = Object.keys(wh).map(k => '<li>'+esc(k)+'. '+esc(wh[k])+'</li>').join('');
   return items ? ('<p><b>Common error hints:</b></p><ul class="hint-list">'+items+'</ul>') : '';
 }
-function renderQuestionBlock(q, i, showAnswers){
+function renderQuestionBlock(q, i, showAnswers, interactive){
   return '<section class="pq">'+
     '<div class="pq-head"><strong>'+(i+1)+'.</strong> <span class="src">'+esc(sourceTag(q))+'</span> '+
       '<span class="marks">('+esc(numMarks(q))+' marks)</span></div>'+
-    passageHtml(q)+questionVisual(q,{interactive:false})+stemHtml(q)+
+    passageHtml(q)+questionVisual(q,{interactive:!!interactive})+stemHtml(q)+
     (hasOptions(q)
       ? '<div class="opts">'+renderOptionLines(q, showAnswers)+'</div>'
       : (vis(q) ? '' : '<div class="blank-lines"></div>'))+
@@ -751,7 +771,7 @@ function renderQuestionBlock(q, i, showAnswers){
       : '')+
   '</section>';
 }
-function paperHTML(paper, showAnswers){
+function paperHTML(paper, showAnswers, interactive){
   const qs = (paper && Array.isArray(paper.questions)) ? paper.questions : [];
   const total = qs.reduce((s,q) => s + numMarks(q), 0);
   const head = '<div class="print-head">'+
@@ -759,7 +779,7 @@ function paperHTML(paper, showAnswers){
     '<p class="ph-sub">Date: '+esc(paper.date || todayStr())+' · Total '+qs.length+' questions · Full marks '+total+' marks</p>'+
     '<p class="ph-line">Name: ________________ Class: ____________ Score: ____________</p>'+
   '</div>';
-  return head + (qs.length ? qs.map((q,i) => renderQuestionBlock(q,i,showAnswers)).join('')
+  return head + (qs.length ? qs.map((q,i) => renderQuestionBlock(q,i,showAnswers,interactive)).join('')
                            : '<p class="muted">This paper has no questions.</p>');
 }
 
@@ -934,10 +954,11 @@ function renderTeacherPaper(){
     '<div class="toolbar paper-toolbar">'+
       '<label class="ck"><input type="checkbox" data-field="show-answers" '+(state.showAnswers?'checked':'')+'> Show answers and explanations</label>'+
       '<span class="spacer"></span>'+
+      '<button class="btn primary" data-action="practice-paper">Practice online (auto-graded)</button>'+
       '<button class="btn ghost" data-action="print-paper">Print / Save as PDF</button>'+
       '<button class="btn ghost" data-action="export-json">Export JSON</button>'+
     '</div>'+
-    '<div class="paper-surface">'+paperHTML(state.paper, state.showAnswers)+'</div>'+
+    '<div class="paper-surface">'+paperHTML(state.paper, state.showAnswers, true)+'</div>'+
   '</div>';
 }
 function renderTeacher(){
@@ -1434,6 +1455,12 @@ function onClick(e){
     case 'gen-all':        genAll(); break;
     case 'toggle-answers': state.showAnswers = !state.showAnswers; render(); break;
     case 'print-paper':    updatePrintArea(); window.print(); break;
+    case 'practice-paper': {
+      const p = state.paper;
+      if (!p || !p.questions || !p.questions.length){ flash('Please generate a paper first.'); break; }
+      startPractice(p.questions, {label: p.title || 'Whole-paper practice'});
+      break;
+    }
     case 'export-json':    exportPaper(); break;
     case 'start-paper':    if (state.paper) startPractice(state.paper.questions, {label:'Current paper'}); break;
     case 'start-practice': startPracticeCustom(); break;
@@ -1501,6 +1528,17 @@ APP.addEventListener('input', onInput);
 APP.addEventListener('change', onChange);
 APP.addEventListener('pointerdown', onPointerDown);
 APP.addEventListener('pointerup', onPointerUp);
+/* on a phone the on-screen keyboard covers half the screen: when a box on a
+   scan is tapped, bring it to the visible middle before typing starts */
+APP.addEventListener('focusin', function(e){
+  const el = e.target;
+  if (!el || !el.classList || !el.classList.contains('shot-input')) return;
+  try {
+    el.scrollIntoView({block:'center', behavior:'smooth'});
+  } catch(err){
+    try { el.scrollIntoView(true); } catch(e2){}
+  }
+});
 
 /* ============================================================
    14. Cloud boot, deep links and progress portability
