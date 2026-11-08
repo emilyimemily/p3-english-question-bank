@@ -191,6 +191,10 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .pq-jump select{font-size:13px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text)}
 .pq-nav{border-radius:12px}
 .pq-nav .bar-note{flex:1 1 auto}
+.paper-finished{margin:0 0 12px;padding:10px 14px;background:var(--green-soft);
+  color:var(--green);border:1px solid var(--border);border-radius:10px;font-size:13px}
+.paper-finished .btn{margin-left:10px}
+.paper-toolbar .hint{font-size:12px}
 /* two halves of one long passage crop read as a single continuous scan */
 .visual > .shot-wrap + .shot-wrap{margin-top:0;border-top:0;border-top-left-radius:0;border-top-right-radius:0}
 @media (max-width:680px){
@@ -354,7 +358,7 @@ function visList(q, which){
   return Array.isArray(a) ? a.filter(Boolean) : [];
 }
 function visParts(qid){
-  const p = state.visualParts[qid];
+  const p = activeVisualParts()[qid];
   return (p && typeof p === 'object') ? p : {};
 }
 function syncVisual(qid){
@@ -381,8 +385,8 @@ function syncVisual(qid){
     if (document.activeElement === el) return;
     el.value = parts[part];
   });
-  state.visualParts[qid] = parts;
-  state.student.answers[qid] = Object.keys(parts).sort(partSort)
+  activeVisualParts()[qid] = parts;
+  activeAnswers()[qid] = Object.keys(parts).sort(partSort)
     .filter(function(k){ return k.charAt(0) !== '_'; })
     .map(function(k){ return parts[k]; }).filter(Boolean).join(' ');
 }
@@ -673,6 +677,10 @@ const state = {
   showAnswers: false,         // teacher preview: show answers & explanations
   paperIndex: 0,              // teacher preview: ONE big question on screen
   paperFurthest: 0,           // furthest page reached (for the resume button)
+  paperAnswers: {},           // answers typed in the paged paper preview
+  paperResults: {},           // qid -> {score, correct, answer, unmarked}
+  paperVisualParts: {},       // per-question scan-box values in the paged preview
+  paperCursor: 0,             // first question in the paper not submitted yet
   student: {                  // active practice session - ONE question on screen
     active:false, questions:[], answers:{}, submitted:false,
     results:{}, startTime:0, elapsed:0, label:'', wbRedo:false,
@@ -685,6 +693,12 @@ const state = {
   visualParts: {}             // per-question values typed on scanned images
 };
 function resetFilters(){ state.filters = emptyFilters(); }
+/* The Paper Builder preview and Practice Online are two independent answering
+   sessions.  Every input writes into the store of the tab that is on screen,
+   so a teacher's paper is never mixed up with an active practice session. */
+function activeAnswers(){ return state.tab === 'teacher' ? state.paperAnswers : state.student.answers; }
+function activeVisualParts(){ return state.tab === 'teacher' ? state.paperVisualParts : state.visualParts; }
+function activeResults(){ return state.tab === 'teacher' ? state.paperResults : state.student.results; }
 
 /* ============================================================
    2. Wrong-book persistence (localStorage + in-memory fallback)
@@ -802,15 +816,31 @@ function renderWrongHints(q){
   const items = Object.keys(wh).map(k => '<li>'+esc(k)+'. '+esc(wh[k])+'</li>').join('');
   return items ? ('<p><b>Common error hints:</b></p><ul class="hint-list">'+items+'</ul>') : '';
 }
-function renderQuestionBlock(q, i, showAnswers, interactive){
+function renderQuestionBlock(q, i, showAnswers, interactive, opts){
+  const screen = interactive !== 'print';
+  const o = opts || {};
+  const ans = (o.ans === undefined || o.ans === null) ? '' : String(o.ans);
+  /* On screen the reference answer is revealed by Submit, never by the
+     teacher's "show answers" checkbox (that one is for the printed copy). */
+  const reveal = screen ? (showAnswers && !!o.graded) : showAnswers;
+  let answerUI;
+  if (screen && hasOptions(q)){
+    answerUI = renderRadioOptions(q, i, ans);
+  } else if (hasOptions(q)){
+    answerUI = '<div class="opts">'+renderOptionLines(q, reveal)+'</div>';
+  } else if (screen && !vis(q)){
+    answerUI = '<div class="visual-answer"><div class="blank-label">Your answer (write below the question)</div>'+
+      '<textarea class="answer-area" rows="3" data-field="student-answer" data-qid="'+esc(q.id)+
+      '" placeholder="Type your answer here...">'+esc(ans)+'</textarea></div>';
+  } else {
+    answerUI = vis(q) ? '' : '<div class="blank-lines"></div>';
+  }
   return '<section class="pq">'+
     '<div class="pq-head"><strong>'+(i+1)+'.</strong> <span class="src">'+esc(sourceTag(q))+'</span> '+
       '<span class="marks">('+esc(numMarks(q))+' marks)</span></div>'+
-    passageHtml(q)+questionVisual(q,{interactive:interactive})+stemHtml(q)+
-    (hasOptions(q)
-      ? '<div class="opts">'+renderOptionLines(q, showAnswers)+'</div>'
-      : (vis(q) ? '' : '<div class="blank-lines"></div>'))+
-    (showAnswers
+    passageHtml(q)+questionVisual(q,{interactive:interactive, ans:(screen ? ans : '')})+stemHtml(q)+
+    answerUI+
+    (reveal
       ? '<div class="ans-block">'+
           '<p><b>Reference answer: </b>'+esc(modelAnswer(q))+'</p>'+
           '<p><b>Explanation: </b>'+esc(q.explanation || '—')+'</p>'+
@@ -841,9 +871,21 @@ function paperHTML(paper, showAnswers, interactive){
 /* ============================================================
    5. Grading + feedback text
    ============================================================ */
-function gradeQuestion(q, answer){
+function hasAnswerKey(q){
+  const model = String(q.answer_text || q.answer || '').trim();
+  const kws = Array.isArray(q.keywords) ? q.keywords.filter(k => String(k).trim()) : [];
+  return !!(model || kws.length);
+}
+function referenceAnswerText(q){
+  const a = String(modelAnswer(q) || '').trim();
+  return a || 'Not available - no answer key was found in the original paper.';
+}
+function gradeQuestion(q, answer, parts){
   const marks = numMarks(q);
   const ans = (answer === null || answer === undefined) ? '' : String(answer);
+  /* A few past-year papers do not contain an answer section.  Never pretend
+     such an item is wrong: let the student / teacher self-mark it instead. */
+  if (!hasAnswerKey(q)) return { score:0, correct:false, unmarked:true };
   if (hasOptions(q)){
     const key = ans.trim(), correctKey = String(q.answer === null || q.answer === undefined ? '' : q.answer).trim();
     let correct = key !== '' && key === correctKey;
@@ -857,7 +899,30 @@ function gradeQuestion(q, answer){
   const kws = Array.isArray(q.keywords) ? q.keywords.filter(k => String(k).trim()) : [];
   const text = ans.toLowerCase().trim();
   if (text === '') return { score:0, correct:false };
-  const vmode = vis(q) ? String(vis(q).mode || '') : '';
+  const v = vis(q);
+  const vmode = v ? String(v.mode || '') : '';
+  /* Cloze / editing / synthesis: one mark for each blank on the scan.  Compare
+     the box values with the official answers position by position, so a
+     passage with three blanks really gives Score 2 / 3 rather than 0 or all. */
+  const vals = parts ? Object.keys(parts).sort(partSort)
+      .filter(function(k){ return k.charAt(0) !== '_'; })
+      .map(function(k){ return String(parts[k] || '').trim(); })
+      .filter(Boolean) : [];
+  if (v && (vmode === 'cloze' || vmode === 'editing' || vmode === 'synthesis')
+      && vals.length > 1 && kws.length > 1){
+    let hit = 0;
+    vals.forEach(function(mine, i){
+      const expected = String(kws[i] || '').toLowerCase().trim();
+      if (!expected) return;
+      const alts = expected.split(/[\/|]/).map(s => s.trim()).filter(Boolean);
+      const m = mine.toLowerCase().trim();
+      if (alts.some(function(a){
+        return m === a || (a.length > 2 && (m.indexOf(a) !== -1 || a.indexOf(m) !== -1));
+      })) hit++;
+    });
+    const score = Math.min(marks, Math.round(marks * hit / vals.length));
+    return { score:score, correct:(hit >= vals.length), perBlank:true };
+  }
   if (vmode === 'truefalse' || vmode === 'tick'){
     const model = String(q.answer_text || q.answer || '').trim().toLowerCase();
     if (model === 'true' || model === 'false' || model === 't' || model === 'f'){
@@ -981,6 +1046,83 @@ function makePaper(questions){
 function resetPaperPaging(){
   state.paperIndex = 0;
   state.paperFurthest = 0;
+  state.paperAnswers = {};
+  state.paperResults = {};
+  state.paperVisualParts = {};
+  state.paperCursor = 0;
+}
+/* "Current progress": the furthest page visited, or the first page that has
+   not been submitted yet - whichever is later. */
+function paperResumeIndex(){
+  const qs = (state.paper && state.paper.questions) || [];
+  if (!qs.length) return 0;
+  return Math.min(qs.length - 1, Math.max(state.paperFurthest || 0, state.paperCursor || 0));
+}
+function paperScore(){
+  const qs = (state.paper && state.paper.questions) || [];
+  let score = 0, marks = 0, submitted = 0, unmarked = 0;
+  qs.forEach(function(q){
+    marks += numMarks(q);
+    const r = state.paperResults[q.id];
+    if (r){ submitted++; score += r.score; if (r.unmarked && !r.overridden) unmarked++; }
+  });
+  return {score, marks, submitted, unmarked, total:qs.length};
+}
+function submitPaperQuestion(){
+  const qs = (state.paper && state.paper.questions) || [];
+  const q = qs[state.paperIndex];
+  if (!q || state.paperResults[q.id]) return;
+  const ans = state.paperAnswers[q.id] === undefined ? '' : state.paperAnswers[q.id];
+  const g = gradeQuestion(q, ans, state.paperVisualParts[q.id]);
+  state.paperResults[q.id] = {score:g.score, correct:g.correct, unmarked:!!g.unmarked, answer:ans};
+  syncWrongbookOnSubmit(q, ans, g);
+  let cursor = 0;
+  while (cursor < qs.length && state.paperResults[qs[cursor].id]) cursor++;
+  state.paperCursor = cursor;
+  render();
+  scrollToEl('paperFeedback');
+}
+function overridePaperResult(qid, isCorrect){
+  const q = questionById(qid);
+  if (!q || !state.paperResults[qid]) return;
+  const r = state.paperResults[qid];
+  r.score = isCorrect ? numMarks(q) : 0;
+  r.correct = isCorrect; r.unmarked = false; r.overridden = true;
+  render();
+}
+/* Immediate feedback card - shown only after this page's Submit was pressed. */
+function paperFeedback(q){
+  const r = state.paperResults[q.id] || {score:0, correct:false, unmarked:true};
+  const ans = r.answer === undefined ? '' : r.answer;
+  const marks = numMarks(q);
+  const unmarked = !!r.unmarked && !r.overridden;
+  const ok = r.score >= marks;
+  const status = unmarked ? '<span class="status part">Needs teacher checking</span>'
+               : ok ? '<span class="status ok">Correct</span>'
+               : (r.score <= 0 ? '<span class="status bad">Incorrect</span>'
+                               : '<span class="status part">Partial marks</span>');
+  const scoreText = unmarked ? 'Not auto-marked · '+r.score+' / '+marks
+                             : 'Score '+r.score+' / '+marks;
+  const why = unmarked
+    ? 'The original paper has no answer key for this item, so it cannot be marked automatically. '+
+      'Check it with your teacher, then use the self-correction buttons below to record your score.'
+    : (ok ? 'Well done - you have secured this mark.' : wrongWhy(q, ans));
+  return '<section class="card feedback-inline '+(ok?'is-ok':'is-bad')+'" id="paperFeedback">'+
+    '<div class="qcard-head"><b>Result</b> '+status+
+      ' <span class="marks">'+esc(scoreText)+'</span></div>'+
+    '<div class="ans-ref"><b>Reference answer: </b>'+esc(referenceAnswerText(q))+
+      ' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+'</div>'+
+    '<div class="explain"><b>Why / what to revise: </b>'+esc(why)+'</div>'+
+    '<div class="explain"><b>Explanation: </b>'+esc(q.explanation || '—')+'</div>'+
+    (unmarked ? '<div class="override"><span class="muted">Self-correction:</span>'+
+      '<button class="btn mini" data-action="paper-override-correct" data-qid="'+esc(q.id)+'">I was right</button>'+
+      '<button class="btn mini" data-action="paper-override-wrong" data-qid="'+esc(q.id)+'">I was wrong</button>'+
+      '</div>' : '')+
+  '</section>';
+}
+function scrollToEl(id){
+  const el = document.getElementById(id);
+  if (el && el.scrollIntoView){ try{ el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){} }
 }
 function scrollPaperIntoView(){
   const el = document.getElementById('paperSurface');
@@ -1034,43 +1176,66 @@ function renderTeacherPaper(){
   const i = Math.min(n - 1, Math.max(0, state.paperIndex || 0));
   state.paperIndex = i;
   state.paperFurthest = Math.min(n - 1, Math.max(state.paperFurthest || 0, i));
-  const furthest = state.paperFurthest;
+  const resume = paperResumeIndex();
   const pct = Math.round((i + 1) / n * 100);
+  const q = qs[i];
+  const r = state.paperResults[q.id];
+  const graded = !!r;
+  const ans = state.paperAnswers[q.id] === undefined ? '' : state.paperAnswers[q.id];
+  const tally = paperScore();
 
   const head = paperHeadHTML(p, qs);
   const progress = '<div class="practice-progress pq-progress">'+
     '<span class="pp-num">Question '+(i+1)+' of '+n+'</span>'+
     '<span class="pp-track"><span class="pp-fill" style="width:'+pct+'%"></span></span>'+
-    '<span class="muted">One question per screen</span>'+
+    '<span class="muted">One question per screen · '+tally.submitted+' / '+n+
+      ' submitted · Score '+tally.score+' / '+tally.marks+'</span>'+
   '</div>';
+  const complete = tally.submitted === n
+    ? '<div class="card paper-finished"><b>Paper complete</b> · Total score '+tally.score+' / '+tally.marks+
+      (tally.unmarked ? ' · '+tally.unmarked+' item(s) still need teacher checking' : '')+
+      ' <button class="btn mini" data-action="paper-reset-scores">Start this paper again</button></div>'
+    : '';
   /* ONLY this question is in the DOM - there is no next article to scroll to */
-  const body = '<div id="paperQuestion">'+renderQuestionBlock(qs[i], i, state.showAnswers, true)+'</div>';
+  const body = '<div id="paperQuestion">'+
+    renderQuestionBlock(q, i, state.showAnswers, true, {ans:ans, graded:graded})+'</div>';
+  const feedback = graded ? paperFeedback(q) : '';
 
   let opts = '';
   for (let k = 0; k < n; k++)
     opts += '<option value="'+k+'"'+(k===i?' selected':'')+'>'+(k+1)+'</option>';
   let left = '<button class="btn ghost" data-action="paper-prev"'+(i===0?' disabled':'')+
              '>Previous question</button>';
-  if (i < furthest)
-    left += '<button class="btn ghost" data-action="paper-resume">Back to Question '+(furthest+1)+'</button>';
+  if (i < resume)
+    left += '<button class="btn ghost" data-action="paper-resume">Back to Question '+(resume+1)+'</button>';
   const jump = '<label class="sel pq-jump">Jump to: <select data-field="paper-goto">'+opts+'</select></label>';
-  const right = '<button class="btn primary" data-action="paper-next"'+(i>=n-1?' disabled':'')+
-                '>Next question</button>';
+  const submitBtn = graded
+    ? '<button class="btn ghost" data-action="paper-submit" disabled>Submitted</button>'
+    : '<button class="btn primary" data-action="paper-submit">Submit answer</button>';
+  const nextBtn = '<button class="btn '+(graded?'primary':'ghost')+'" data-action="paper-next"'+
+                  (i>=n-1?' disabled':'')+'>Next question</button>';
+  const right = submitBtn + nextBtn;
+  const note = graded
+    ? '<span class="bar-note has-result">Score '+r.score+' / '+numMarks(q)+
+      ' · Reference answer: '+esc(referenceAnswerText(q))+'</span>'
+    : '<span class="bar-note">Answer on the scan or below it, then press Submit to see '+
+      'whether you are right, your score and the correct answer.</span>';
   const bar = '<div class="practice-bar pq-nav">'+
     '<div class="toolbar">'+left+jump+'</div>'+
-    '<span class="bar-note">One article per screen - use Next to see the next one.</span>'+
+    note+
     '<div class="bar-right">'+right+'</div>'+
   '</div>';
 
   return '<div class="card">'+
     '<div class="toolbar paper-toolbar">'+
       '<label class="ck"><input type="checkbox" data-field="show-answers" '+(state.showAnswers?'checked':'')+'> Show answers and explanations</label>'+
+      '<span class="hint">Print only - on screen, answers appear after Submit.</span>'+
       '<span class="spacer"></span>'+
       '<button class="btn primary" data-action="practice-paper">Practice online (auto-graded)</button>'+
       '<button class="btn ghost" data-action="print-paper">Print / Save as PDF</button>'+
       '<button class="btn ghost" data-action="export-json">Export JSON</button>'+
     '</div>'+
-    '<div class="paper-surface" id="paperSurface">'+head+progress+body+bar+'</div>'+
+    '<div class="paper-surface" id="paperSurface">'+head+progress+complete+body+feedback+bar+'</div>'+
   '</div>';
 }
 function renderTeacher(){
@@ -1152,8 +1317,8 @@ function submitPractice(){
   const q = s.questions[s.qIndex];
   if (!q || gradedQuestion(q)) return;
   const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
-  const g = gradeQuestion(q, ans);
-  s.results[q.id] = { score:g.score, correct:g.correct, overridden:false };
+  const g = gradeQuestion(q, ans, state.visualParts[q.id]);
+  s.results[q.id] = { score:g.score, correct:g.correct, unmarked:!!g.unmarked, overridden:false };
   syncWrongbookOnSubmit(q, ans, g);
   if (s.qIndex === s.cursor) s.cursor = Math.min(s.questions.length, s.cursor + 1);
   if (s.cursor >= s.questions.length && !s.submitted){
@@ -1228,20 +1393,27 @@ function practiceFeedback(q){
   const r = s.results[q.id] || {score:0, correct:false, overridden:false};
   const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
   const marks = numMarks(q);
+  const unmarked = !!r.unmarked && !r.overridden;
   const ok = r.score >= marks;
-  const status = ok ? '<span class="status ok">Correct</span>'
+  const status = unmarked ? '<span class="status part">Needs teacher checking</span>'
+               : ok ? '<span class="status ok">Correct</span>'
                : (r.score <= 0 ? '<span class="status bad">Incorrect</span>'
                                : '<span class="status part">Partial marks</span>');
+  const scoreText = unmarked ? 'Not auto-marked · '+r.score+' / '+marks
+                             : 'Score '+r.score+' / '+marks;
   const topic = [q.topic, q.objective].filter(Boolean).join(' · ') || '—';
-  const why = ok ? 'Well done - you have secured this mark.' : wrongWhy(q, ans);
+  const why = unmarked
+    ? 'The original paper has no answer key for this item, so it cannot be marked automatically. '+
+      'Check it with your teacher, then use the self-correction buttons below to record your score.'
+    : (ok ? 'Well done - you have secured this mark.' : wrongWhy(q, ans));
   const inWB = loadWB().some(x => x.qid === q.id);
   const chosen = hasOptions(q) && ans !== ''
     ? ' (You chose '+esc(ans)+'. '+esc((q.options||{})[ans] || '')+')' : '';
   return '<section class="card feedback-inline '+(ok?'is-ok':'is-bad')+'" id="practiceFeedback">'+
     '<div class="qcard-head"><b>Result</b> '+status+
-      ' <span class="marks">Score '+r.score+' / '+marks+'</span>'+
+      ' <span class="marks">'+esc(scoreText)+'</span>'+
       (r.overridden ? ' <small class="muted">(self-corrected)</small>' : '')+'</div>'+
-    '<div class="ans-ref"><b>Reference answer: </b>'+esc(modelAnswer(q))+
+    '<div class="ans-ref"><b>Reference answer: </b>'+esc(referenceAnswerText(q))+
       ' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+chosen+'</div>'+
     '<div class="fb-grid">'+
       '<div class="fb-row"><div class="fb-label">This item tests</div><div class="fb-body">'+esc(topic)+'</div></div>'+
@@ -1340,7 +1512,7 @@ function renderPracticePage(){
   const rr = s.results[q.id];
   const note = graded
     ? '<span class="bar-note has-result">Score '+rr.score+' / '+numMarks(q)+
-      ' · Reference answer: '+esc(modelAnswer(q))+'</span>'
+      ' · Reference answer: '+esc(referenceAnswerText(q))+'</span>'
     : '<span class="bar-note">Answer on the scan, then press Submit to see the score and answer.</span>';
   const bar = '<div class="practice-bar">'+
     '<div class="toolbar">'+left+'</div>'+
@@ -1591,6 +1763,27 @@ function lockPracticeInputs(){
     }
   });
 }
+/* Once a page of the generated paper has been submitted its answers are
+   frozen (still visible), so the score always matches what was submitted. */
+function lockPaperInputs(){
+  if (state.tab !== 'teacher' || !state.paper) return;
+  const qs = state.paper.questions || [];
+  const q = qs[state.paperIndex];
+  if (!q || !state.paperResults[q.id]) return;
+  const card = document.getElementById('paperQuestion');
+  if (!card || !card.querySelectorAll) return;
+  Array.prototype.forEach.call(card.querySelectorAll('input, textarea, .draw-surface'), function(el){
+    const tag = el.tagName;
+    if (tag === 'INPUT'){
+      if (el.type === 'radio' || el.type === 'checkbox') el.disabled = true;
+      else el.readOnly = true;
+    } else if (tag === 'TEXTAREA'){
+      el.readOnly = true;
+    } else if (el.style){
+      el.style.pointerEvents = 'none';
+    }
+  });
+}
 function render(){
   const app = document.getElementById('app');
   app.innerHTML = renderHeader() + renderTabs() +
@@ -1598,6 +1791,7 @@ function render(){
   updatePrintArea();
   ensureTimer();
   lockPracticeInputs();
+  lockPaperInputs();
 }
 
 /* ============================================================
@@ -1613,7 +1807,7 @@ function handleField(el){
       state.drawCount = (isNaN(n) || n < 1) ? 1 : n;
       break;
     }
-    case 'student-answer': state.student.answers[el.dataset.qid] = el.value; break;
+    case 'student-answer': activeAnswers()[el.dataset.qid] = el.value; break;
     case 'vpart': {
       if (el.type === 'checkbox' && el.checked && el.dataset.group){
         Array.prototype.forEach.call(
@@ -1628,9 +1822,9 @@ function handleField(el){
         Array.prototype.forEach.call(
           document.querySelectorAll('[data-group="'+el.dataset.group+'"]'),
           function(other){ if (other !== el) other.checked = false; });
-        state.student.answers[el.dataset.qid] = el.value;
-      } else if (!el.checked && state.student.answers[el.dataset.qid] === el.value){
-        state.student.answers[el.dataset.qid] = '';
+        activeAnswers()[el.dataset.qid] = el.value;
+      } else if (!el.checked && activeAnswers()[el.dataset.qid] === el.value){
+        activeAnswers()[el.dataset.qid] = '';
       }
       break;
     }
@@ -1670,7 +1864,16 @@ function onClick(e){
     case 'gen-all':        genAll(); break;
     case 'paper-prev':     gotoPaperQuestion(state.paperIndex - 1); break;
     case 'paper-next':     gotoPaperQuestion(state.paperIndex + 1); break;
-    case 'paper-resume':   gotoPaperQuestion(state.paperFurthest); break;
+    case 'paper-resume':   gotoPaperQuestion(paperResumeIndex()); break;
+    case 'paper-submit':   submitPaperQuestion(); break;
+    case 'paper-override-correct': overridePaperResult(qid, true); break;
+    case 'paper-override-wrong':   overridePaperResult(qid, false); break;
+    case 'paper-reset-scores': {
+      state.paperAnswers = {}; state.paperResults = {}; state.paperVisualParts = {};
+      state.paperCursor = 0; state.paperIndex = 0; state.paperFurthest = 0;
+      render(); scrollPaperIntoView();
+      break;
+    }
     case 'toggle-answers': state.showAnswers = !state.showAnswers; render(); break;
     case 'print-paper':    updatePrintArea(); window.print(); break;
     case 'practice-paper': {
@@ -1706,7 +1909,7 @@ function onClick(e){
     case 'clear-lines': {
       const hid = document.querySelector('input[data-part="_lines"][data-qid="'+qid+'"]');
       if (hid) hid.value = '[]';
-      const p = state.visualParts[qid] || {}; p._lines = '[]'; state.visualParts[qid] = p;
+      const p = activeVisualParts()[qid] || {}; p._lines = '[]'; activeVisualParts()[qid] = p;
       render();
       break;
     }
@@ -1747,7 +1950,7 @@ function onPointerUp(e){
   line.setAttribute('x2', p.x); line.setAttribute('y2', p.y);
   if (s.svg.appendChild) s.svg.appendChild(line);
   if (hid){ hid.value = JSON.stringify(arr); syncVisual(s.qid); }
-  else { const vp = state.visualParts[s.qid] || {}; vp._lines = JSON.stringify(arr); state.visualParts[s.qid] = vp; }
+  else { const vp = activeVisualParts()[s.qid] || {}; vp._lines = JSON.stringify(arr); activeVisualParts()[s.qid] = vp; }
 }
 
 const APP = document.getElementById('app');
