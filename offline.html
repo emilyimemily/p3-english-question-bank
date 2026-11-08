@@ -141,12 +141,6 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .shot-input{position:absolute;box-sizing:border-box;border:1.5px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.96);color:#132a5e;font-size:13px;line-height:1.2;padding:1px 5px;min-width:26px;min-height:22px;box-shadow:0 0 0 2px rgba(47,91,215,.14);z-index:3}
 .shot-input:focus{outline:2px solid #2f5bd7;background:#fff}
 .shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none;min-height:16px}
-.blank-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
-.blank-row .br-label{font-size:12px;font-weight:700;color:var(--accent-dark)}
-.blank-row .br-num{font-size:12px;font-weight:700;color:var(--accent);min-width:16px;text-align:center}
-.blank-row input[type="text"]{flex:1 1 220px;min-width:150px;box-sizing:border-box;border:1px solid var(--accent);border-radius:6px;padding:7px 9px;font-size:14px;background:#fff;color:var(--text)}
-.blank-row input[type="text"]:focus{outline:2px solid var(--accent);background:#fff}
-.blank-row .br-hint{flex-basis:100%;font-size:11px;color:var(--muted)}
 .visual-answer{margin-top:10px}
 .visual-answer .answer-area{min-height:76px}
 .vis-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
@@ -278,10 +272,6 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
               background:rgba(255,255,255,.52)}
   .shot-input:focus{background:#fff;z-index:6}
   /* the mirrored "Your answer" row is the comfortable way to type on a phone */
-  .blank-row{gap:8px;padding:10px}
-  .blank-row input[type="text"]{flex:1 1 100%;min-width:0;font-size:16px;min-height:42px}
-  .blank-row .br-label{flex:0 0 100%}
-  .blank-row .br-hint{flex-basis:100%}
   .vis-table input[type="text"]{font-size:16px;min-height:36px}
   .vis-table td.center,.vis-table th.center{width:64px}
   .vis-table input[type="checkbox"]{width:26px;height:26px}
@@ -318,8 +308,6 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
   .visual-label .tag,.visual-note,.draw-tools{display:none}
   .shot-wrap{max-width:14cm;border-color:#bbb;break-inside:avoid;page-break-inside:avoid}
   .shot-input-empty{background:#fff;border:1px dashed #555}
-  .blank-row{background:#fff;border:1px solid #888;padding:4px 6px;margin:6px 0}
-  .blank-row input[type="text"]{border:1px solid #888;min-height:18px;padding:2px 4px;font-size:11px}
   .vis-table th,.vis-table td{border-color:#888;padding:4px 6px;font-size:11px}
   .vis-table input[type="text"]{border:1px solid #888;min-height:20px}
   .draw-surface{display:none}
@@ -424,6 +412,10 @@ function visualImageHtml(q, which, interactive){
   const v = vis(q), imgs = visList(q, which);
   if (!v || !imgs.length) return '';
   const withBoxes = (v.overlay_on === which);
+  /* Comprehension / Grammar / Vocabulary Cloze (and Editing) are answered ONLY
+     in the boxes printed on the passage scan.  Nothing at all is added below
+     that scan - no mirrored answer row and no "open full size" link. */
+  const barePassage = which === 'question' && (v.mode === 'cloze' || v.mode === 'editing');
   const sizes = (which === 'article') ? (v.article_wh || []) : (v.question_wh || []);
   let out = '';
   imgs.forEach(function(src, i){
@@ -455,7 +447,7 @@ function visualImageHtml(q, which, interactive){
            (withBoxes ? pic
                       : '<a class="shot-link" href="'+esc(src)+'" target="_blank" rel="noopener">'+pic+'</a>')+
            boxes + surface + '</div>'+
-           (withBoxes ? '<a class="shot-open" href="'+esc(src)+'" target="_blank" rel="noopener">Open this scan full size</a>' : '');
+           (withBoxes && !barePassage ? '<a class="shot-open" href="'+esc(src)+'" target="_blank" rel="noopener">Open this scan full size</a>' : '');
   });
   return out;
 }
@@ -508,9 +500,10 @@ function visualAnswerHtml(q, interactive, ans){
          esc(visParts(q.id)['_lines'] || '[]')+'"></div>';
   }
   /* Cloze / editing / synthesis already have a real, focusable text box on
-     every printed blank of the scan.  A second row of boxes under the picture
-     was confusing and is deliberately NOT rendered any more. */
+     every printed blank of the scan.  Nothing is rendered below the scan for
+     these question types - not a mirrored answer row, not a fallback textarea. */
   if (own.length) return h;
+  if (mode === 'cloze' || mode === 'editing') return h;
   /* An editable True/False or tick table is itself the answer input. */
   if (v.table) return h;
   if (hasOptions(q)) return h;
@@ -1789,9 +1782,11 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:'){
      interface appears without asking the user to hard-refresh. */
   var hadController = !!navigator.serviceWorker.controller;
   var reloaded = false;
+  try{ reloaded = sessionStorage.getItem('p3ebReloaded') === '1'; }catch(e){}
   navigator.serviceWorker.addEventListener('controllerchange', function(){
     if (!hadController || reloaded) return;
     reloaded = true;
+    try{ sessionStorage.setItem('p3ebReloaded','1'); }catch(e){}
     try{ window.location.reload(); }catch(e){}
   });
   window.addEventListener('load', function(){

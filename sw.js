@@ -1,5 +1,5 @@
 /* P3 English Question Bank - offline cache */
-const CACHE = 'p3-english-bank-v6';
+const CACHE = 'p3-english-bank-v7';
 const CORE = [
   './', './index.html', './offline.html',
   './data/question_bank.json', './data/vocab.json',
@@ -12,7 +12,20 @@ self.addEventListener('install', function(e){
 self.addEventListener('activate', function(e){
   e.waitUntil(caches.keys().then(function(keys){
     return Promise.all(keys.filter(function(k){ return k !== CACHE; }).map(function(k){ return caches.delete(k); }));
-  }).then(function(){ return self.clients.claim(); }));
+  }).then(function(){ return self.clients.claim(); }).then(function(){
+    /* Releases before v6 used a cache-first worker with no reload hook, so an
+       already-open tab could keep showing an obsolete interface forever.
+       Force those tabs to load the fresh HTML once when this worker takes over.
+       Activate runs once per worker version, so this cannot loop. */
+    return self.clients.matchAll({type:'window', includeUncontrolled:true}).then(function(list){
+      return Promise.all(list.map(function(c){
+        if (!c || !c.url || c.url.indexOf(self.registration.scope) !== 0) return null;
+        if (typeof c.navigate !== 'function') return null;
+        try { return c.navigate(c.url).catch(function(){ return null; }); }
+        catch (err) { return null; }
+      }));
+    });
+  }).catch(function(){ /* never let a failed reload break activation */ }));
 });
 function put(req, res){
   if (!res || !res.ok) return res;
