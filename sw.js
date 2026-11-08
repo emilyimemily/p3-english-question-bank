@@ -1,5 +1,5 @@
 /* P3 English Question Bank - offline cache */
-const CACHE = 'p3-english-bank-v1';
+const CACHE = 'p3-english-bank-v2';
 const CORE = [
   './', './index.html', './offline.html',
   './data/question_bank.json', './data/vocab.json',
