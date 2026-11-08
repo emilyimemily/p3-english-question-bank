@@ -4,7 +4,7 @@ A free, public, browser-based question bank built from **55 Primary 3 English pa
 papers (2024-2025, Singapore)**. Everything is static: no server, no database, no API key, no
 tracking. Open the link on a phone, tablet or laptop and start practising.
 
-- **1,375 questions** from 55 papers (EOY / WA1 / WA2 / WA3)
+- **1,094 questions** from 55 papers (EOY / WA1 / WA2 / WA3)
 - Paper builder, timed practice, automatic marking, item-by-item feedback, wrong book
 - Works offline after the first visit (PWA + service worker)
 - **Open JSON data** so any app, script or AI agent can consume the bank
@@ -24,7 +24,7 @@ Open the live URL. The three tabs are:
 
 | Tab | What it does |
 | --- | --- |
-| **Paper Builder** | Filter by year, school, exam, question type, objective or topic; generate a printable paper with or without answers. |
+| **Paper Builder** | Filter by year, school, exam, question type, objective or topic; generate a printable paper. The paged preview shows one question per screen with a **Submit** button that instantly marks it and shows the score and reference answer. |
 | **Student Practice** | Draw random questions, answer them, submit and get per-item feedback with scoring key words. |
 | **Wrong Book** | Review errors grouped by topic or type, mark items mastered, and print a revision list. |
 
@@ -66,7 +66,7 @@ from a browser, a script, a notebook or an LLM tool.
 ```js
 const res  = await fetch('https://cdn.jsdelivr.net/gh/emilyimemily/p3-english-question-bank@main/data/question_bank.json');
 const bank = await res.json();
-console.log(bank.questions.length);   // 1375
+console.log(bank.questions.length);   // 1094
 ```
 
 ### Question fields
@@ -215,3 +215,31 @@ The screen shows exactly ONE big question (one passage / one article) at a time:
 
 Progress (`n / N submitted`) and a progress bar are always visible. The same
 fillable scans are used on desktop and phone.
+
+
+## 8. Submit and instant marking in the Paper Builder
+
+The generated paper preview is also a student answer sheet - one big question
+(one passage) per screen, with a **Submit answer** button on EVERY page.
+Nothing is marked or revealed before that button is pressed.
+
+| After Submit | What the student sees |
+| --- | --- |
+| Correct / Incorrect / Partial marks | Whether the answer was right |
+| Score X / Y | Marks for this question (cloze and editing are scored blank by blank) |
+| Reference answer | The official answer from the original paper |
+| Your answer + explanation | What was typed, plus the item's topic and explanation |
+
+Submitted pages lock their inputs but keep the result visible when the student
+uses **Previous question** or **Jump to** to look back. The progress line shows
+`k / N submitted` and the running total score; when every page is submitted a
+**Paper complete** card shows the total. **Back to Question N** jumps straight
+to the first unanswered question.
+
+Every question type can be answered and submitted this way: multiple choice
+(option buttons below the scan), cloze / editing / synthesis (boxes on the
+printed blanks), True / False tables (cells), reading comprehension and other
+open answers (text box below the question scan), and matching (lines on the
+scan). A few original papers contain no answer section; those items are marked
+**Needs teacher checking** instead of being wrongly scored as zero, and offer
+**I was right / I was wrong** self-correction buttons to record a score.
