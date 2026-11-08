@@ -191,6 +191,9 @@ Behaviour by item type:
 - **Matching** - drag on the scan to draw connecting lines (a text answer is
   also accepted).
 
-The same layout is used in the paper builder, practice, feedback, wrong book and
-print views. `visuals/` holds 301 full-page scans and 437 question crops (~40 MB);
-keep it next to `index.html` for offline copies.
+The same layout is used in the paper builder, practice, feedback and wrong book
+views; only the printable copy uses empty dashed answer lines. Build a paper in
+the Paper Builder, press "Practice online (auto-graded)" and students answer on
+the web, typing straight into the boxes on each question's own scan. Every
+on-screen view is fillable. Keep `visuals/` next to `index.html` for offline
+copies.

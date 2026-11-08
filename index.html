@@ -136,12 +136,14 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .visual-note{font-size:12px;color:var(--muted);margin:6px 0}
 .shot-wrap{position:relative;display:block;width:100%;max-width:900px;margin:8px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff}
 .shot-link{display:block}
+.shot-open{display:inline-block;font-size:11px;color:var(--accent);margin:0 0 10px;text-decoration:underline}
 .shot-img{display:block;width:100%;height:auto}
 .shot-input{position:absolute;box-sizing:border-box;border:1.5px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.96);color:#132a5e;font-size:13px;line-height:1.2;padding:1px 5px;min-width:26px;min-height:22px;box-shadow:0 0 0 2px rgba(47,91,215,.14);z-index:3}
 .shot-input:focus{outline:2px solid #2f5bd7;background:#fff}
 .shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none;min-height:16px}
 .blank-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
 .blank-row .br-label{font-size:12px;font-weight:700;color:var(--accent-dark)}
+.blank-row .br-num{font-size:12px;font-weight:700;color:var(--accent);min-width:16px;text-align:center}
 .blank-row input[type="text"]{flex:1 1 220px;min-width:150px;box-sizing:border-box;border:1px solid var(--accent);border-radius:6px;padding:7px 9px;font-size:14px;background:#fff;color:var(--text)}
 .blank-row input[type="text"]:focus{outline:2px solid var(--accent);background:#fff}
 .blank-row .br-hint{flex-basis:100%;font-size:11px;color:var(--muted)}
@@ -373,7 +375,11 @@ function shotInputHtml(q, o, i, interactive){
   const st = 'left:'+Number(o.x||0)+'%;top:'+Number(o.y||0)+'%;width:'+Number(o.w||10)+'%;height:'+Number(o.h||4)+'%';
   const qid = o.owner || q.id;
   const part = o.part || ('o'+i);
-  if (!interactive) return '<div class="shot-input shot-input-empty" style="'+st+'" title="'+esc(o.label||'')+'"></div>';
+  /* ONLY the hidden printable copy uses a decoration.  Every on-screen view
+     gets a real, focusable text input - a dead <div> here was the reason
+     students could not type on the scan at all. */
+  if (interactive === 'print')
+    return '<div class="shot-input shot-input-empty" style="'+st+'" title="'+esc(o.label||'')+'"></div>';
   return '<input class="shot-input" type="text" style="'+st+'" data-field="vpart" data-qid="'+esc(qid)+
          '" data-part="'+esc(part)+'" value="'+esc(visParts(qid)[part] || '')+
          '" aria-label="'+esc(o.label || 'Answer')+' answer box">';
@@ -399,7 +405,7 @@ function visualImageHtml(q, which, interactive){
         .forEach(function(o, k){ boxes += shotInputHtml(q, o, k, interactive); });
     }
     let surface = '';
-    if (withBoxes && v.lines && interactive){
+    if (withBoxes && v.lines && interactive !== 'print'){
       let svgLines = '';
       try {
         JSON.parse(visParts(q.id)['_lines'] || '[]').forEach(function(s){
@@ -413,10 +419,15 @@ function visualImageHtml(q, which, interactive){
        the answer boxes are always sized and placed on the right blank */
     const dim = (sizes[i] && sizes[i][0] && sizes[i][1])
       ? ' style="aspect-ratio:'+sizes[i][0]+'/'+sizes[i][1]+'"' : '';
+    /* A scan that carries answer boxes must NOT be a link: a tap that misses
+       a box by a pixel used to open the picture in a new tab instead of
+       letting the student type.  Full-size is offered below instead. */
+    const pic = '<img class="shot-img" src="'+esc(src)+'" alt="Scanned question">';
     out += '<div class="shot-wrap"'+dim+'>'+
-           '<a class="shot-link" href="'+esc(src)+'" target="_blank" rel="noopener">'+
-           '<img class="shot-img" src="'+esc(src)+'" alt="Scanned exam page"></a>'+
-           boxes + surface + '</div>';
+           (withBoxes ? pic
+                      : '<a class="shot-link" href="'+esc(src)+'" target="_blank" rel="noopener">'+pic+'</a>')+
+           boxes + surface + '</div>'+
+           (withBoxes ? '<a class="shot-open" href="'+esc(src)+'" target="_blank" rel="noopener">Open this scan full size</a>' : '');
   });
   return out;
 }
@@ -437,13 +448,13 @@ function visTableHtml(q, interactive){
         const on = parts[part] === (pre+word) ? ' checked' : '';
         h += '<td class="center"><input type="checkbox" data-field="vpart" data-qid="'+esc(q.id)+
              '" data-part="'+part+'" data-prefix="'+esc(pre)+'" data-group="'+esc(q.id+'_'+i)+
-             '" value="'+word+'"'+on+(interactive ? '' : ' disabled')+'></td>';
+             '" value="'+word+'"'+on+(interactive === 'print' ? ' disabled' : '')+'></td>';
       } else {
         const raw = String(parts[part] || '');
         const val = raw.indexOf(pre) === 0 ? raw.slice(pre.length) : raw;
         h += '<td class="center"><input type="text" data-field="vpart" data-qid="'+esc(q.id)+
              '" data-part="'+part+'" data-prefix="'+esc(pre)+'" value="'+esc(val)+'"'+
-             (interactive ? ' placeholder="T / F"' : ' disabled')+'></td>';
+             (interactive === 'print' ? ' disabled' : ' placeholder="T / F"')+'></td>';
       }
     });
     h += '</tr>';
@@ -456,14 +467,15 @@ function visualAnswerRow(q, interactive){
   const boxes = ownOverlays(q);
   if (!boxes.length) return '';
   const parts = visParts(q.id);
-  let h = '<div class="blank-row"><span class="br-label">Your answer</span>';
+  let h = '<div class="blank-row"><span class="br-label">Your answers</span>';
   boxes.forEach(function(o, i){
     const part = o.part || ('o'+i);
-    h += '<input type="text" data-field="vpart" data-qid="'+esc(q.id)+'" data-part="'+esc(part)+
-         '" value="'+esc(parts[part] || '')+'" placeholder="'+esc(o.label || ('Blank '+(i+1)))+
-         '"'+(interactive ? '' : ' disabled')+'>';
+    h += '<span class="br-num">'+(i+1)+'</span>'+
+         '<input type="text" data-field="vpart" data-qid="'+esc(q.id)+'" data-part="'+esc(part)+
+         '" value="'+esc(interactive === 'print' ? '' : (parts[part] || ''))+'" placeholder="'+esc(o.label || ('Blank '+(i+1)))+
+         '"'+(interactive === 'print' ? ' disabled' : '')+'>';
   });
-  h += '<span class="br-hint">Type here if the box on the scan is hard to reach - both places stay in sync.</span></div>';
+  h += '<span class="br-hint">Type directly in the boxes on the scan, or here - both stay in sync.</span></div>';
   return h;
 }
 function visualAnswerHtml(q, interactive, ans){
@@ -498,19 +510,45 @@ function visualAnswerHtml(q, interactive, ans){
   }
   return h;
 }
+/* A question that has no answer boxes still gets its OWN screenshot, cut out
+   of the PDF, instead of a whole page that contains other question types. */
+function qscanHtml(q){
+  const imgs = (q && Array.isArray(q.qscan)) ? q.qscan.filter(Boolean) : [];
+  if (!imgs.length) return '';
+  const wh = q.qscan_wh || [];
+  let h = '<div class="visual"><div class="visual-label">Question scan '+
+          '<span class="tag">This question only - click to open full size</span></div>';
+  imgs.forEach(function(src, i){
+    const d = wh[i];
+    const dim = (d && d[0] && d[1]) ? ' style="aspect-ratio:'+d[0]+'/'+d[1]+'"' : '';
+    h += '<div class="shot-wrap"'+dim+'><a class="shot-link" href="'+esc(src)+'" '+
+         'target="_blank" rel="noopener"><img class="shot-img" src="'+esc(src)+'" '+
+         'alt="Scanned question"></a></div>';
+  });
+  return h + '</div>';
+}
 function questionVisual(q, opts){
-  const v = vis(q); if (!v) return '';
-  const interactive = !!(opts && opts.interactive);
+  const v = vis(q);
+  if (!v) return qscanHtml(q);
+  /* only the hidden printable copy is allowed to be non-interactive; every
+     screen view (builder preview, practice, feedback, wrong book) is fillable */
+  const printMode = !!(opts && opts.interactive === 'print');
+  const interactive = printMode ? 'print' : true;
   const ans = (opts && opts.ans !== undefined && opts.ans !== null) ? String(opts.ans) : '';
   const arts = visList(q, 'article'), qs = visList(q, 'question');
   let h = '<div class="visual">';
   if (arts.length){
-    h += '<div class="visual-label">Reading Passage / Full Text <span class="tag">Complete scanned page(s) - click to open full size</span></div>';
-    h += visualImageHtml(q, 'article', interactive && (v.overlay_on === 'article' || !!v.lines));
+    h += '<div class="visual-label">Reading passage '+
+         '<span class="tag">Only the passage from the original paper - click to open full size</span></div>';
+    h += visualImageHtml(q, 'article', interactive);
   }
   if (qs.length){
-    h += '<div class="visual-label">Question <span class="tag">Scanned from the original paper - click to open full size</span></div>';
-    h += visualImageHtml(q, 'question', interactive && v.overlay_on === 'question');
+    const passageMode = (v.mode === 'cloze' || v.mode === 'editing');
+    h += '<div class="visual-label">'+(passageMode ? 'Question / passage' : 'Question')+
+         ' <span class="tag">'+(passageMode
+            ? 'Type your answers in the boxes on the scan'
+            : 'This question only - cropped from the original paper')+'</span></div>';
+    h += visualImageHtml(q, 'question', interactive);
   }
   h += visualAnswerHtml(q, interactive, ans);
   return h + '</div>';
@@ -756,7 +794,7 @@ function renderQuestionBlock(q, i, showAnswers, interactive){
   return '<section class="pq">'+
     '<div class="pq-head"><strong>'+(i+1)+'.</strong> <span class="src">'+esc(sourceTag(q))+'</span> '+
       '<span class="marks">('+esc(numMarks(q))+' marks)</span></div>'+
-    passageHtml(q)+questionVisual(q,{interactive:!!interactive})+stemHtml(q)+
+    passageHtml(q)+questionVisual(q,{interactive:interactive})+stemHtml(q)+
     (hasOptions(q)
       ? '<div class="opts">'+renderOptionLines(q, showAnswers)+'</div>'
       : (vis(q) ? '' : '<div class="blank-lines"></div>'))+
@@ -1118,7 +1156,7 @@ function feedbackCard(q, i){
   const chosen = hasOptions(q) && ans !== '' ? '(you chose '+esc(ans)+'. '+esc((q.options||{})[ans] || '')+')' : '';
   return '<section class="qcard feedback">'+
     '<div class="qcard-head"><span class="qno">'+(i+1)+'</span> <span class="src">'+esc(sourceTag(q))+'</span> '+status+'</div>'+
-    passageHtml(q)+questionVisual(q,{interactive:false})+stemHtml(q)+
+    passageHtml(q)+questionVisual(q,{interactive:true})+stemHtml(q)+
     '<div class="ans-ref"><b>Reference answer: </b>'+esc(modelAnswer(q))+' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+' '+chosen+'</div>'+
     '<div class="fb-grid">'+
       '<div class="fb-row"><div class="fb-label">This item tests</div><div class="fb-body">'+esc(topic)+'</div></div>'+
@@ -1228,7 +1266,7 @@ function wbItem(it, q){
     '<div class="wb-item-top"><span class="src">'+esc(sourceTag(q))+'</span>'+
       (it.mastered?'<span class="badge mastered">Mastered</span>':'')+
       '<span class="badge">Wrong '+(it.wrongCount||0)+' times</span></div>'+
-    passageHtml(q)+questionVisual(q,{interactive:false})+stemHtml(q)+
+    passageHtml(q)+questionVisual(q,{interactive:true})+stemHtml(q)+
     '<div class="wb-meta">Last answer: '+esc(last)+' · Last score: '+(it.lastScore===undefined?0:it.lastScore)+'/'+numMarks(q)+
       ' · Added: '+esc(fmtDate(it.addedAt))+'</div>'+
     '<div class="toolbar">'+
@@ -1271,7 +1309,7 @@ function wrongbookPrintable(){
     return '<section class="pq">'+
       '<div class="pq-head"><strong>'+(i+1)+'.</strong> <span class="src">'+esc(sourceTag(q))+'</span> '+
         '<span class="marks">('+numMarks(q)+' marks)</span></div>'+
-      passageHtml(q)+questionVisual(q,{interactive:false})+stemHtml(q)+
+      passageHtml(q)+questionVisual(q,{interactive:'print'})+stemHtml(q)+
       (hasOptions(q) ? '<div class="opts">'+renderOptionLines(q,false)+'</div>' : '')+
       '<div class="pq-meta">'+
         '<p><b>Reference answer: </b>'+esc(modelAnswer(q))+'</p>'+
@@ -1353,13 +1391,13 @@ function updatePrintArea(){
   if (!el) return;
   let html;
   if (state.tab === 'teacher')
-    html = state.paper ? paperHTML(state.paper, state.showAnswers) : '<p>No paper generated yet.</p>';
+    html = state.paper ? paperHTML(state.paper, state.showAnswers, 'print') : '<p>No paper generated yet.</p>';
   else if (state.tab === 'wrongbook')
     html = wrongbookPrintable();
   else
     html = state.student.active
-      ? paperHTML({title:'P3 English Class Practice · '+todayStr(), date:todayStr(), questions:state.student.questions}, false)
-      : (state.paper ? paperHTML(state.paper, false) : '<p>No practice content yet.</p>');
+      ? paperHTML({title:'P3 English Class Practice · '+todayStr(), date:todayStr(), questions:state.student.questions}, false, 'print')
+      : (state.paper ? paperHTML(state.paper, false, 'print') : '<p>No practice content yet.</p>');
   el.innerHTML = '<div class="print-doc">'+html+'</div>';
 }
 let timerHandle = null;
