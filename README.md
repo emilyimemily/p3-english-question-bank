@@ -165,21 +165,27 @@ version.  Each of the 827 visual questions carries a `visual` object:
 | --- | --- |
 | `mode` | `reading`, `cloze`, `editing`, `synthesis`, `truefalse`, `tick` or `matching` |
 | `article_images` | Complete, untruncated scans of the whole passage / exercise page(s) |
+| `article_wh` / `question_wh` | Pixel size of each scan, so the page reserves its space before the picture loads |
 | `question_images` | A crop of that individual question from the original paper |
-| `overlays` | Answer boxes positioned (in percent) on the scan's printed blanks |
+| `overlays` | Answer boxes positioned (in percent) on the scan's printed blanks, each with the `owner` question and a unique `part` key |
 | `table` | Editable True/False grid: text fields or tick boxes in the cells |
 | `lines` | Enables freehand connecting lines on the scan for matching items |
 
 Behaviour by item type:
 
-- **Reading comprehension** - full passage scan, then the question scan, then an
-  answer box directly below the question scan. The article is never truncated to
-  fit one question.
+- **Reading comprehension** - full passage scan, then the question scan, then the
+  answer field directly below the question scan (option buttons for multiple
+  choice, a text box for open answers). The article is never truncated to fit
+  one question.
 - **Comprehension / Grammar / Vocabulary Cloze** - the whole passage is scanned
-  and a text box sits on each printed blank.
+  and **every printed blank of that passage carries a fillable box**. Each box
+  belongs to the question printed next to it, so the whole passage can be
+  completed on the scan; an "Your answer" row below the scan mirrors the box of
+  the current question and stays in sync with it.
 - **Editing** - the whole exercise is scanned with a box at the correction.
 - **Sentence synthesis** - each sub-question is cropped; every underlined part
   gets its own box. With a printed connector, boxes appear before and after it.
+  The rule that underlines the printed sentence is not treated as an answer line.
 - **True / False tables** - an HTML table with text fields, or tick boxes when
   the paper says "tick".
 - **Matching** - drag on the scan to draw connecting lines (a text answer is

@@ -137,9 +137,14 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .shot-wrap{position:relative;display:block;width:100%;max-width:900px;margin:8px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff}
 .shot-link{display:block}
 .shot-img{display:block;width:100%;height:auto}
-.shot-input{position:absolute;box-sizing:border-box;border:1px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.94);color:#132a5e;font-size:13px;padding:2px 6px;min-width:0;min-height:0;box-shadow:0 0 0 2px rgba(47,91,215,.12);z-index:3}
+.shot-input{position:absolute;box-sizing:border-box;border:1.5px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.96);color:#132a5e;font-size:13px;line-height:1.2;padding:1px 5px;min-width:26px;min-height:22px;box-shadow:0 0 0 2px rgba(47,91,215,.14);z-index:3}
 .shot-input:focus{outline:2px solid #2f5bd7;background:#fff}
-.shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none}
+.shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none;min-height:16px}
+.blank-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
+.blank-row .br-label{font-size:12px;font-weight:700;color:var(--accent-dark)}
+.blank-row input[type="text"]{flex:1 1 220px;min-width:150px;box-sizing:border-box;border:1px solid var(--accent);border-radius:6px;padding:7px 9px;font-size:14px;background:#fff;color:var(--text)}
+.blank-row input[type="text"]:focus{outline:2px solid var(--accent);background:#fff}
+.blank-row .br-hint{flex-basis:100%;font-size:11px;color:var(--muted)}
 .visual-answer{margin-top:10px}
 .visual-answer .answer-area{min-height:76px}
 .vis-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
@@ -263,7 +268,9 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
   .visual-label{color:#222;font-size:10px}
   .visual-label .tag,.visual-note,.draw-tools{display:none}
   .shot-wrap{max-width:14cm;border-color:#bbb;break-inside:avoid;page-break-inside:avoid}
-  .shot-input-empty{background:#fff;border:1px solid #555}
+  .shot-input-empty{background:#fff;border:1px dashed #555}
+  .blank-row{background:#fff;border:1px solid #888;padding:4px 6px;margin:6px 0}
+  .blank-row input[type="text"]{border:1px solid #888;min-height:18px;padding:2px 4px;font-size:11px}
   .vis-table th,.vis-table td{border-color:#888;padding:4px 6px;font-size:11px}
   .vis-table input[type="text"]{border:1px solid #888;min-height:20px}
   .draw-surface{display:none}
@@ -316,22 +323,54 @@ function syncVisual(qid){
     const full = val ? (el.dataset.prefix || '') + val : '';
     if (full || !(part in parts)) parts[part] = full;
   });
+  // every field that shares the same part (the box on the scan and its mirror
+  // in the answer row) is kept in step with what the student typed
+  Array.prototype.forEach.call(nodes, function(el){
+    const part = el.dataset.part;
+    if (!(part in parts)) return;
+    if (el.type === 'checkbox'){
+      el.checked = (parts[part] === (el.dataset.prefix || '') + (el.value || 'yes'));
+      return;
+    }
+    if (document.activeElement === el) return;
+    el.value = parts[part];
+  });
   state.visualParts[qid] = parts;
-  state.student.answers[qid] = Object.keys(parts).sort()
+  state.student.answers[qid] = Object.keys(parts).sort(partSort)
     .filter(function(k){ return k.charAt(0) !== '_'; })
     .map(function(k){ return parts[k]; }).filter(Boolean).join(' ');
 }
+/* blank parts are named b1, b2, ... - they must sort numerically, not as text */
+function partSort(a, b){
+  const ra = /^([a-z]?)(\d+)$/.exec(a), rb = /^([a-z]?)(\d+)$/.exec(b);
+  if (ra && rb){
+    if (ra[1] !== rb[1]) return ra[1] < rb[1] ? -1 : 1;
+    return parseInt(ra[2], 10) - parseInt(rb[2], 10);
+  }
+  return a < b ? -1 : (a > b ? 1 : 0);
+}
 function shotInputHtml(q, o, i, interactive){
   const st = 'left:'+Number(o.x||0)+'%;top:'+Number(o.y||0)+'%;width:'+Number(o.w||10)+'%;height:'+Number(o.h||4)+'%';
-  if (!interactive) return '<div class="shot-input shot-input-empty" style="'+st+'"></div>';
-  return '<input class="shot-input" type="text" style="'+st+'" data-field="vpart" data-qid="'+esc(q.id)+
-         '" data-part="o'+i+'" value="'+esc(visParts(q.id)['o'+i] || '')+
+  const qid = o.owner || q.id;
+  const part = o.part || ('o'+i);
+  if (!interactive) return '<div class="shot-input shot-input-empty" style="'+st+'" title="'+esc(o.label||'')+'"></div>';
+  return '<input class="shot-input" type="text" style="'+st+'" data-field="vpart" data-qid="'+esc(qid)+
+         '" data-part="'+esc(part)+'" value="'+esc(visParts(qid)[part] || '')+
          '" aria-label="'+esc(o.label || 'Answer')+' answer box">';
+}
+/* the blanks that belong to THIS question (a cloze passage shows the blanks of
+   the whole passage, but only the one of this question is this answer) */
+function ownOverlays(q){
+  const v = vis(q); if (!v) return [];
+  return (v.overlays || []).filter(function(o){
+    return o.own !== false && (!o.owner || o.owner === q.id);
+  });
 }
 function visualImageHtml(q, which, interactive){
   const v = vis(q), imgs = visList(q, which);
   if (!v || !imgs.length) return '';
   const withBoxes = (v.overlay_on === which);
+  const sizes = (which === 'article') ? (v.article_wh || []) : (v.question_wh || []);
   let out = '';
   imgs.forEach(function(src, i){
     let boxes = '';
@@ -350,8 +389,13 @@ function visualImageHtml(q, which, interactive){
       surface = '<svg class="draw-surface" data-role="draw-surface" data-qid="'+esc(q.id)+
                 '" viewBox="0 0 100 100" preserveAspectRatio="none">'+svgLines+'</svg>';
     }
-    out += '<div class="shot-wrap"><a class="shot-link" href="'+esc(src)+'" target="_blank" rel="noopener">'+
-           '<img class="shot-img" src="'+esc(src)+'" alt="Scanned exam page" loading="lazy"></a>'+
+    /* the scan keeps its proportions even before the picture has loaded, so
+       the answer boxes are always sized and placed on the right blank */
+    const dim = (sizes[i] && sizes[i][0] && sizes[i][1])
+      ? ' style="aspect-ratio:'+sizes[i][0]+'/'+sizes[i][1]+'"' : '';
+    out += '<div class="shot-wrap"'+dim+'>'+
+           '<a class="shot-link" href="'+esc(src)+'" target="_blank" rel="noopener">'+
+           '<img class="shot-img" src="'+esc(src)+'" alt="Scanned exam page"></a>'+
            boxes + surface + '</div>';
   });
   return out;
@@ -386,35 +430,52 @@ function visTableHtml(q, interactive){
   });
   return h + '</tbody></table>';
 }
+/* a fillable field for every blank of this question, mirrored from the box
+   that sits on the scan - both places always hold the same text */
+function visualAnswerRow(q, interactive){
+  const boxes = ownOverlays(q);
+  if (!boxes.length) return '';
+  const parts = visParts(q.id);
+  let h = '<div class="blank-row"><span class="br-label">Your answer</span>';
+  boxes.forEach(function(o, i){
+    const part = o.part || ('o'+i);
+    h += '<input type="text" data-field="vpart" data-qid="'+esc(q.id)+'" data-part="'+esc(part)+
+         '" value="'+esc(parts[part] || '')+'" placeholder="'+esc(o.label || ('Blank '+(i+1)))+
+         '"'+(interactive ? '' : ' disabled')+'>';
+  });
+  h += '<span class="br-hint">Type here if the box on the scan is hard to reach - both places stay in sync.</span></div>';
+  return h;
+}
 function visualAnswerHtml(q, interactive, ans){
   const v = vis(q); if (!v) return '';
   const mode = v.mode || 'reading';
-  const hasBoxes = (v.overlays || []).length > 0;
-  const needsText = (mode === 'reading' || mode === 'matching' ||
-                     (mode === 'synthesis' && !hasBoxes));
-  if (interactive){
-    let h = '';
-    if (v.table) h += visTableHtml(q, true);
-    if (v.lines){
-      h += '<div class="draw-tools"><span>Drag on the picture above to draw a connecting line.</span>'+
-           '<button class="btn mini" type="button" data-action="clear-lines" data-qid="'+esc(q.id)+'">Clear lines</button>'+
-           '<input type="hidden" data-field="vpart" data-qid="'+esc(q.id)+'" data-part="_lines" value="'+
-           esc(visParts(q.id)['_lines'] || '[]')+'"></div>';
-    }
-    if (needsText){
-      const asPart = mode !== 'reading';
-      const pname = mode === 'matching' ? 'mtext' : 's0';
-      const val = asPart ? (visParts(q.id)[pname] || '') : ans;
+  const own = ownOverlays(q);
+  let h = '';
+  if (v.table) h += visTableHtml(q, interactive);
+  if (v.lines){
+    h += '<div class="draw-tools"><span>Drag on the picture above to draw a connecting line.</span>'+
+         '<button class="btn mini" type="button" data-action="clear-lines" data-qid="'+esc(q.id)+'">Clear lines</button>'+
+         '<input type="hidden" data-field="vpart" data-qid="'+esc(q.id)+'" data-part="_lines" value="'+
+         esc(visParts(q.id)['_lines'] || '[]')+'"></div>';
+  }
+  if (mode === 'reading' || mode === 'matching'){
+    /* multiple choice answers are the option buttons shown below the scan;
+       an open answer is typed in the box right under the question scan */
+    if (!hasOptions(q)){
       h += '<div class="visual-answer"><div class="blank-label">Your answer (write below the question)</div>'+
-           '<textarea class="answer-area" rows="3" data-field="'+(asPart ? 'vpart' : 'student-answer')+'"'+
-           (asPart ? ' data-part="'+pname+'"' : '')+' data-qid="'+esc(q.id)+
-           '" placeholder="Type your answer here...">'+esc(val)+'</textarea></div>';
+           '<textarea class="answer-area" rows="3" data-field="student-answer" data-qid="'+esc(q.id)+
+           '" placeholder="Type your answer here...">'+esc(ans)+'</textarea></div>';
     }
     return h;
   }
-  let h = '';
-  if (v.table) h += visTableHtml(q, false);
-  if (needsText) h += '<div class="blank-label">Answer:</div><div class="blank-lines"></div>';
+  /* cloze / editing / synthesis: the blanks on the scan carry the answer */
+  if (own.length){
+    h += visualAnswerRow(q, interactive);
+  } else {
+    h += '<div class="visual-answer"><div class="blank-label">Your answer</div>'+
+         '<textarea class="answer-area" rows="2" data-field="student-answer" data-qid="'+esc(q.id)+
+         '" placeholder="Type your answer here...">'+esc(ans)+'</textarea></div>';
+  }
   return h;
 }
 function questionVisual(q, opts){
@@ -1002,9 +1063,9 @@ function renderStudentForm(){
   const s = state.student;
   const cards = s.questions.map((q,i) => {
     const ans = s.answers[q.id] === undefined ? '' : s.answers[q.id];
-    const input = vis(q) ? '' : (hasOptions(q)
+    const input = hasOptions(q)
       ? renderRadioOptions(q, i, ans)
-      : '<textarea class="answer-area" rows="3" placeholder="Type your answer here..." data-field="student-answer" data-qid="'+esc(q.id)+'">'+esc(ans)+'</textarea>');
+      : (vis(q) ? '' : '<textarea class="answer-area" rows="3" placeholder="Type your answer here..." data-field="student-answer" data-qid="'+esc(q.id)+'">'+esc(ans)+'</textarea>');
     return '<section class="qcard">'+
       '<div class="qcard-head"><span class="qno">'+(i+1)+'</span> <span class="src">'+esc(sourceTag(q))+'</span> '+
         '<span class="marks">('+numMarks(q)+' marks)</span></div>'+
