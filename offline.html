@@ -1784,8 +1784,20 @@ boot();
 </script>
 <script>
 if ('serviceWorker' in navigator && location.protocol !== 'file:'){
+  /* A returning visitor can still be controlled by an older cache-first
+     worker.  Once the fresh worker takes over, reload ONCE so the new
+     interface appears without asking the user to hard-refresh. */
+  var hadController = !!navigator.serviceWorker.controller;
+  var reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function(){
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    try{ window.location.reload(); }catch(e){}
+  });
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('./sw.js', {scope:'./'}).catch(function(){});
+    navigator.serviceWorker.register('./sw.js', {scope:'./'}).then(function(reg){
+      reg.update();
+    }).catch(function(){});
   });
 }
 </script>
