@@ -243,3 +243,26 @@ open answers (text box below the question scan), and matching (lines on the
 scan). A few original papers contain no answer section; those items are marked
 **Needs teacher checking** instead of being wrongly scored as zero, and offer
 **I was right / I was wrong** self-correction buttons to record a score.
+
+
+## 9. Answer audit (independent attempt vs original answer key)
+
+Every one of the 1094 questions has an `answer_audit` record, shown next to
+**Reference answer**. Where the scan text allowed, the question was attempted
+independently BEFORE the paper's answer key was consulted; the remaining items
+are checked for internal consistency and explicitly marked as unverifiable.
+
+| Status | Meaning |
+| --- | --- |
+| `verified` | Our independent attempt matched the paper's key. |
+| `questionable` | The key disagrees with our attempt, is incomplete, or is not a valid option. Both versions are accepted when marking. |
+| `ocr_fixed` | The answer-sheet OCR was corrected (missing spaces, misspellings, page footers). The raw OCR text is still shown. |
+| `unverifiable` | The scan text was too incomplete to re-solve; teacher check recommended. |
+| `no_key` | The original paper contained no answer key for this item, so it is never auto-marked. |
+
+Totals: 118 questionable, 87 OCR-corrected, 97 verified,
+486 unverifiable, 306 with no key. Questionable items can be
+listed with the **doubt / review** filter in the Paper Builder. Where the
+paper's own key is debatable (for example 2025 EOY Rosyth Q32-34: the answer
+sheet says `list / costs / buying`, while `list / prices / paying` also fits),
+the Reference answer shows both and grading accepts either.

@@ -211,6 +211,17 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .status.bad{background:var(--red-soft);color:var(--red)}
 .status.part{background:var(--amber-soft);color:var(--amber)}
 .ans-ref{background:var(--bg);border-radius:8px;padding:8px 12px;font-size:13px;margin:8px 0;color:var(--muted)}
+/* ===== Answer audit flags (shown at Reference answer) ===== */
+.ans-audit{margin:8px 0 0;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.55;
+  border:1px solid var(--border-soft);background:var(--card);color:var(--text)}
+.ans-audit.warn{background:var(--amber-soft);border-color:#f0d9a8;color:#7a4e08}
+.ans-audit.fix{background:var(--accent-soft);border-color:#d9e2ff;color:var(--accent-dark)}
+.ans-audit.ok{background:var(--green-soft);border-color:#c9ecd8;color:#0b6c38}
+.ans-audit.mute{background:var(--bg);color:var(--muted)}
+.ans-audit .audit-note{display:block;margin-top:4px}
+.ans-audit .audit-ind{display:block;margin-top:5px;font-weight:700}
+.ans-audit-chip{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;
+  font-size:11px;font-weight:700;background:var(--amber-soft);color:#8a5a09}
 .fb-grid{margin-top:10px;border:1px solid var(--border-soft);border-radius:10px;overflow:hidden}
 .fb-row{display:flex;border-bottom:1px solid var(--border-soft)}
 .fb-row:last-child{border-bottom:0}
@@ -595,7 +606,9 @@ function numMarks(q){ const n = Number(q && q.marks); return (isFinite(n) && n >
 function sourceTag(q){
   const s = [q.year, q.school, q.exam, (q.no !== null && q.no !== undefined) ? 'Q'+q.no : '', q.type]
     .filter(x => x !== '' && x !== null && x !== undefined).join(' · ');
-  return s + (q.doubt === true ? ' · ⚠ Needs Review' : '');
+  const a = auditOf(q);
+  return s + (q.doubt === true ? ' · ⚠ Needs Review' : '') +
+    (a && a.status === 'questionable' ? ' · ⚠ Answer flagged' : '');
 }
 function modelAnswer(q){
   const raw = String(q.answer === null || q.answer === undefined ? '' : q.answer);
@@ -788,7 +801,8 @@ function matchedQuestions(){
                    ...Object.values(q.options || {})].join(' ').toLowerCase();
       if (!hay.includes(f.text.trim().toLowerCase())) return false;
     }
-    if (f.onlyDoubt && !(q.doubt === true || q.needs_review === true)) return false;
+    if (f.onlyDoubt && !(q.doubt === true || q.needs_review === true ||
+        (auditOf(q) && auditOf(q).status === 'questionable'))) return false;
     if (f.wrongMode === 'exclude' && q.verdict === 'wrong') return false;
     return true;
   });
@@ -879,6 +893,60 @@ function referenceAnswerText(q){
   const a = String(modelAnswer(q) || '').trim();
   return a || 'Not available - no answer key was found in the original paper.';
 }
+/* Every key was checked against an independent attempt and against the paper's
+   answer sheet.  Questionable / repaired keys are flagged right here, so the
+   student can see both versions of the answer. */
+function auditOf(q){
+  return (q && q.answer_audit && typeof q.answer_audit === 'object') ? q.answer_audit : null;
+}
+function answerAuditHtml(q, compact){
+  const a = auditOf(q);
+  if (!a) return '';
+  const st = String(a.status || '');
+  const note = String(a.note || '').trim();
+  const mine = String(a.independent || '').trim();
+  const src  = String(a.source || '').trim();
+  if (st === 'questionable'){
+    if (compact)
+      return '<span class="ans-audit-chip" title="'+esc(note)+'">&#9888; Questionable</span>';
+    return '<div class="ans-audit warn"><b>&#9888; Questionable answer - check both versions</b>'+
+      (note ? '<span class="audit-note">'+esc(note)+'</span>' : '')+
+      (mine ? '<span class="audit-ind">Independent answer: '+esc(mine)+'</span>' : '')+
+      (src  ? '<span class="audit-note">Source: '+esc(src)+'</span>' : '')+
+      '<span class="audit-note">Both the paper\'s key and the independent answer are accepted when marking.</span>'+
+      '</div>';
+  }
+  if (st === 'ocr_fixed'){
+    if (compact) return '<span class="ans-audit-chip" style="background:var(--accent-soft);color:var(--accent-dark)" '+
+      'title="'+esc(note)+'">&#9998; OCR-corrected</span>';
+    return '<div class="ans-audit fix"><b>&#9998; OCR-corrected key</b>'+
+      (note ? '<span class="audit-note">'+esc(note)+'</span>' : '')+
+      '<span class="audit-note">Original answer-sheet text: '+esc(String(a.official || ''))+'</span></div>';
+  }
+  if (compact) return '';
+  if (st === 'verified')
+    return '<div class="ans-audit ok"><b>&#10003; Independently checked</b>'+
+      '<span class="audit-note">Our own attempt matched the answer on the original paper.</span></div>';
+  if (st === 'unverifiable')
+    return '<div class="ans-audit mute"><b>&#9678; Independent check inconclusive</b>'+
+      '<span class="audit-note">'+esc(note || 'The scan text is incomplete; verify against the source scan.')+'</span></div>';
+  if (st === 'no_key')
+    return '<div class="ans-audit mute"><b>&#9678; No official answer key</b>'+
+      '<span class="audit-note">The original paper has no answer key for this item, so it is not auto-marked.</span></div>';
+  return '';
+}
+function referenceAnswerHtml(q, compact){
+  return esc(referenceAnswerText(q)) + answerAuditHtml(q, compact);
+}
+/* A keyword may now hold alternatives, e.g. "costs | prices".  The audit
+   adds these so a student whose correct answer differs from the paper's key
+   is not failed.  Each group counts as one mark / one scoring point. */
+function kwGroups(q){
+  const kws = Array.isArray(q.keywords) ? q.keywords.filter(k => String(k).trim()) : [];
+  return kws.map(function(k){
+    return String(k).split(/[|\/]/).map(function(s){ return s.trim().toLowerCase(); }).filter(Boolean);
+  });
+}
 function gradeQuestion(q, answer, parts){
   const marks = numMarks(q);
   const ans = (answer === null || answer === undefined) ? '' : String(answer);
@@ -895,7 +963,8 @@ function gradeQuestion(q, answer, parts){
     return { score: correct ? marks : 0, correct };
   }
   // Open-ended: keyword-based partial scoring.
-  const kws = Array.isArray(q.keywords) ? q.keywords.filter(k => String(k).trim()) : [];
+  const groups = kwGroups(q);
+  const kws = groups.map(function(g){ return g.join(' | '); });
   const text = ans.toLowerCase().trim();
   if (text === '') return { score:0, correct:false };
   const v = vis(q);
@@ -911,9 +980,8 @@ function gradeQuestion(q, answer, parts){
       && vals.length > 1 && kws.length > 1){
     let hit = 0;
     vals.forEach(function(mine, i){
-      const expected = String(kws[i] || '').toLowerCase().trim();
-      if (!expected) return;
-      const alts = expected.split(/[\/|]/).map(s => s.trim()).filter(Boolean);
+      const alts = groups[i] || [];
+      if (!alts.length) return;
       const m = mine.toLowerCase().trim();
       if (alts.some(function(a){
         return m === a || (a.length > 2 && (m.indexOf(a) !== -1 || a.indexOf(m) !== -1));
@@ -934,7 +1002,9 @@ function gradeQuestion(q, answer, parts){
     }
   }
   if (kws.length){
-    const hits = kws.filter(k => text.includes(String(k).toLowerCase())).length;
+    const hits = groups.filter(function(g){
+      return g.some(function(k){ return text.indexOf(k) !== -1; });
+    }).length;
     if (hits === kws.length) return { score:marks, correct:true };
     if (hits >= 1)           return { score:Math.ceil(marks/2), correct:false };
     return { score:0, correct:false };
@@ -1109,7 +1179,7 @@ function paperFeedback(q){
   return '<section class="card feedback-inline '+(ok?'is-ok':'is-bad')+'" id="paperFeedback">'+
     '<div class="qcard-head"><b>Result</b> '+status+
       ' <span class="marks">'+esc(scoreText)+'</span></div>'+
-    '<div class="ans-ref"><b>Reference answer: </b>'+esc(referenceAnswerText(q))+
+    '<div class="ans-ref"><b>Reference answer: </b>'+referenceAnswerHtml(q, false)+
       ' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+'</div>'+
     '<div class="explain"><b>Why / what to revise: </b>'+esc(why)+'</div>'+
     '<div class="explain"><b>Explanation: </b>'+esc(q.explanation || '—')+'</div>'+
@@ -1216,7 +1286,7 @@ function renderTeacherPaper(){
   const right = submitBtn + nextBtn;
   const note = graded
     ? '<span class="bar-note has-result">Score '+r.score+' / '+numMarks(q)+
-      ' · Reference answer: '+esc(referenceAnswerText(q))+'</span>'
+      ' · Reference answer: '+referenceAnswerHtml(q, true)+'</span>'
     : '<span class="bar-note">Answer on the scan or below it, then press Submit to see '+
       'whether you are right, your score and the correct answer.</span>';
   const bar = '<div class="practice-bar pq-nav">'+
@@ -1412,7 +1482,7 @@ function practiceFeedback(q){
     '<div class="qcard-head"><b>Result</b> '+status+
       ' <span class="marks">'+esc(scoreText)+'</span>'+
       (r.overridden ? ' <small class="muted">(self-corrected)</small>' : '')+'</div>'+
-    '<div class="ans-ref"><b>Reference answer: </b>'+esc(referenceAnswerText(q))+
+    '<div class="ans-ref"><b>Reference answer: </b>'+referenceAnswerHtml(q, false)+
       ' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+chosen+'</div>'+
     '<div class="fb-grid">'+
       '<div class="fb-row"><div class="fb-label">This item tests</div><div class="fb-body">'+esc(topic)+'</div></div>'+
@@ -1511,7 +1581,7 @@ function renderPracticePage(){
   const rr = s.results[q.id];
   const note = graded
     ? '<span class="bar-note has-result">Score '+rr.score+' / '+numMarks(q)+
-      ' · Reference answer: '+esc(referenceAnswerText(q))+'</span>'
+      ' · Reference answer: '+referenceAnswerHtml(q, true)+'</span>'
     : '<span class="bar-note">Answer on the scan, then press Submit to see the score and answer.</span>';
   const bar = '<div class="practice-bar">'+
     '<div class="toolbar">'+left+'</div>'+
