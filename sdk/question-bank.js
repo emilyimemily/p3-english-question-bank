@@ -1,8 +1,10 @@
 /*!
  * P3 English Question Bank - zero-dependency SDK
  * Include this file, then call:  await P3Bank.load();
- * Auto-detects the repo root from the script URL, so it works from GitHub Pages,
- * jsDelivr, or any static host. Pass a base URL to load from a remote repo instead.
+ * Auto-detects the root from the script URL, so it works on any static host.
+ * Private repo:  await P3Bank.load({ url: rawUrl, headers: { Authorization: 'Bearer <PAT>' } });
+ * Encrypted host: await P3Bank.loadSecure('the-passphrase');
+ * NEVER put a GitHub token in browser code - use a server-side proxy.
  */
 (function (global) {
   'use strict';
@@ -16,20 +18,53 @@
   }
   var bank = null, byId = null;
 
+  function ingest(data) {
+    if (!data || !Array.isArray(data.questions)) throw new Error('P3Bank: invalid payload');
+    bank = data;
+    byId = new Map();
+    data.questions.forEach(function (q) { byId.set(String(q.id), q); });
+    return P3Bank;
+  }
+  function b64bytes(s) {
+    var bin = atob(String(s));
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
   var P3Bank = {
-    version: '1.0.0',
-    /** Load the question bank. base defaults to the repo root that hosts this SDK. */
-    load: function (base) {
-      var url = join(base || defaultBase(), 'data/question_bank.json');
-      return fetch(url).then(function (r) {
+    version: '1.1.0',
+    /** Load plaintext JSON. Accepts a base URL string, or { url, headers, base }. */
+    load: function (arg) {
+      var o = (typeof arg === 'string') ? { base: arg } : (arg || {});
+      var url = o.url || join(o.base || defaultBase(), 'data/question_bank.json');
+      var init = o.headers ? { headers: o.headers } : {};
+      return fetch(url, init).then(function (r) {
         if (!r.ok) throw new Error('P3Bank.load: HTTP ' + r.status + ' for ' + url);
         return r.json();
-      }).then(function (data) {
-        if (!data || !Array.isArray(data.questions)) throw new Error('P3Bank.load: invalid payload');
-        bank = data;
-        byId = new Map();
-        data.questions.forEach(function (q) { byId.set(String(q.id), q); });
-        return P3Bank;
+      }).then(ingest);
+    },
+    /** Load the AES-256-GCM encrypted bundle from an encrypted deploy host. */
+    loadSecure: function (passphrase, base, bundleName) {
+      var url = join(base || defaultBase(), bundleName || 'secure/bank.enc');
+      if (!(globalThis.crypto && crypto.subtle))
+        return Promise.reject(new Error('P3Bank.loadSecure: Web Crypto needs HTTPS or localhost'));
+      return fetch(url).then(function (r) {
+        if (!r.ok) throw new Error('P3Bank.loadSecure: HTTP ' + r.status + ' for ' + url);
+        return r.json();
+      }).then(function (bundle) {
+        var enc = new TextEncoder();
+        return crypto.subtle.importKey('raw', enc.encode(String(passphrase)), 'PBKDF2', false, ['deriveKey'])
+          .then(function (rawKey) {
+            return crypto.subtle.deriveKey(
+              { name: 'PBKDF2', salt: b64bytes(bundle.salt), iterations: bundle.iter, hash: 'SHA-256' },
+              rawKey, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+          })
+          .then(function (key) {
+            return crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64bytes(bundle.iv) },
+                                         key, b64bytes(bundle.data));
+          })
+          .then(function (plain) { return ingest(JSON.parse(new TextDecoder().decode(plain))); });
       });
     },
     get bank() { return bank; },
