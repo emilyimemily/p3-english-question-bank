@@ -563,25 +563,9 @@ function qscanHtml(q){
   });
   return h + '</div>';
 }
-/* The printed word box above a cloze passage, rendered as text. */
-function wordBankHtml(q, interactive){
-  const wb = q && q.word_bank;
-  if (!wb) return '';
-  const items = Array.isArray(wb.items) ? wb.items : [];
-  if (!items.length) return '';
-  let rows = '';
-  items.forEach(function(it){
-    const L = String(it[0] || ''), W = String(it[1] || '');
-    rows += '<span class="wb-item"><b>('+esc(L)+')</b> <span class="wb-word">'+esc(W)+'</span></span>';
-  });
-  return '<div class="word-bank'+(interactive === 'print' ? ' wb-print' : '')+'">'+
-    '<div class="wb-head">Words to choose from '+
-      '<span class="tag">read from the original paper</span></div>'+
-    '<div class="wb-grid">'+rows+'</div>'+
-    '<div class="wb-note">Each word can be used only once. Write its letter in the blank.</div>'+
-    (wb.partial ? '<div class="wb-note wb-warn">&#9888; Some words in the box could not be read from the scan. Check the original paper for the missing ones.</div>' : '')+
-  '</div>';
-}
+/* The printed reference word box is part of the SCAN, never OCR'ed into text.
+   OCR of the box was unreliable (letters mis-read, words dropped), so the
+   original printed box is shipped inside the screenshot instead. */
 function questionVisual(q, opts){
   const v = vis(q);
   if (!v) return qscanHtml(q);
@@ -592,9 +576,6 @@ function questionVisual(q, opts){
   const ans = (opts && opts.ans !== undefined && opts.ans !== null) ? String(opts.ans) : '';
   const arts = visList(q, 'article'), qs = visList(q, 'question');
   let h = '<div class="visual">';
-  /* The word box printed above a cloze passage is shown as TEXT, not as part
-     of the screenshot: the screenshot starts at the passage itself. */
-  h += wordBankHtml(q, interactive);
   if (arts.length){
     h += '<div class="visual-label">Reading passage '+
          '<span class="tag">Only the passage from the original paper - click to open full size</span></div>';
@@ -2136,7 +2117,13 @@ async function boot(){
     BANK = window.P3_EMBEDDED_BANK;
   } else {
     try{
-      const res = await fetch(BANK_DATA_URL, {cache:'force-cache'});
+      /* 'no-cache' means "revalidate with the server before using a copy".
+         'force-cache' was the opposite: it let the browser answer from its
+         own HTTP cache without ever asking GitHub Pages, so a published
+         fix (new answer boxes, removed word banks) could stay invisible
+         for days.  The service worker still serves the cached copy when
+         the network is unavailable. */
+      const res = await fetch(BANK_DATA_URL, {cache:'no-cache'});
       if (!res.ok) throw new Error('HTTP '+res.status);
       BANK = await res.json();
       if (!BANK || !Array.isArray(BANK.questions)) throw new Error('Invalid question bank payload');

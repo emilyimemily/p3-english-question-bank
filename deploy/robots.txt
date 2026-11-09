@@ -1,3 +1,0 @@
-# Private repository / restricted deployment. Do not index.
-User-agent: *
-Disallow: /
