@@ -141,6 +141,16 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .shot-input{position:absolute;box-sizing:border-box;border:1.5px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.96);color:#132a5e;font-size:13px;line-height:1.2;padding:1px 5px;min-width:26px;min-height:22px;box-shadow:0 0 0 2px rgba(47,91,215,.14);z-index:3}
 .shot-input:focus{outline:2px solid #2f5bd7;background:#fff}
 .shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none;min-height:16px}
+/* word box above a cloze passage - text, not part of the screenshot */
+.word-bank{border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;background:var(--bg);padding:10px 12px;margin:10px 0 6px;max-width:900px}
+.wb-head{font-size:12px;font-weight:700;color:var(--accent-dark);margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.wb-head .tag{font-weight:500;color:var(--muted);font-size:11px}
+.wb-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 14px}
+.wb-item{font-size:14px;color:#1d2b4a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-item b{color:var(--accent-dark);font-weight:700;margin-right:2px}
+.wb-word{font-family:ui-monospace,Menlo,Consolas,monospace}
+.wb-note{font-size:11px;color:var(--muted);margin-top:8px}
+.wb-print{background:#fff;border-color:#888}
 .visual-answer{margin-top:10px}
 .visual-answer .answer-area{min-height:76px}
 .vis-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
@@ -548,6 +558,24 @@ function qscanHtml(q){
   });
   return h + '</div>';
 }
+/* The printed word box above a cloze passage, rendered as text. */
+function wordBankHtml(q, interactive){
+  const wb = q && q.word_bank;
+  if (!wb) return '';
+  const items = Array.isArray(wb.items) ? wb.items : [];
+  if (!items.length) return '';
+  let rows = '';
+  items.forEach(function(it){
+    const L = String(it[0] || ''), W = String(it[1] || '');
+    rows += '<span class="wb-item"><b>('+esc(L)+')</b> <span class="wb-word">'+esc(W)+'</span></span>';
+  });
+  return '<div class="word-bank'+(interactive === 'print' ? ' wb-print' : '')+'">'+
+    '<div class="wb-head">Words to choose from '+
+      '<span class="tag">read from the original paper</span></div>'+
+    '<div class="wb-grid">'+rows+'</div>'+
+    '<div class="wb-note">Each word can be used only once. Write its letter in the blank.</div>'+
+  '</div>';
+}
 function questionVisual(q, opts){
   const v = vis(q);
   if (!v) return qscanHtml(q);
@@ -558,6 +586,9 @@ function questionVisual(q, opts){
   const ans = (opts && opts.ans !== undefined && opts.ans !== null) ? String(opts.ans) : '';
   const arts = visList(q, 'article'), qs = visList(q, 'question');
   let h = '<div class="visual">';
+  /* The word box printed above a cloze passage is shown as TEXT, not as part
+     of the screenshot: the screenshot starts at the passage itself. */
+  h += wordBankHtml(q, interactive);
   if (arts.length){
     h += '<div class="visual-label">Reading passage '+
          '<span class="tag">Only the passage from the original paper - click to open full size</span></div>';
