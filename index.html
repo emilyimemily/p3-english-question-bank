@@ -150,6 +150,7 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .wb-item b{color:var(--accent-dark);font-weight:700;margin-right:2px}
 .wb-word{font-family:ui-monospace,Menlo,Consolas,monospace}
 .wb-note{font-size:11px;color:var(--muted);margin-top:8px}
+.wb-warn{color:#8a5a00}
 .wb-print{background:#fff;border-color:#888}
 .visual-answer{margin-top:10px}
 .visual-answer .answer-area{min-height:76px}
@@ -574,6 +575,7 @@ function wordBankHtml(q, interactive){
       '<span class="tag">read from the original paper</span></div>'+
     '<div class="wb-grid">'+rows+'</div>'+
     '<div class="wb-note">Each word can be used only once. Write its letter in the blank.</div>'+
+    (wb.partial ? '<div class="wb-note wb-warn">&#9888; Some words in the box could not be read from the scan. Check the original paper for the missing ones.</div>' : '')+
   '</div>';
 }
 function questionVisual(q, opts){
