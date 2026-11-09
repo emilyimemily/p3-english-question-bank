@@ -429,9 +429,13 @@ function shotInputHtml(q, o, i, interactive){
      students could not type on the scan at all. */
   if (interactive === 'print')
     return '<div class="shot-input shot-input-empty" style="'+st+'" title="'+esc(o.label||'')+'"></div>';
+  /* grammar-cloze inline options: the bracket [ offer / offers ] carries the
+     choices - show them as the input's placeholder so the student still sees the
+     options while the box sits over the bracket. */
+  const ph = o.opt_text ? ' placeholder="'+esc(o.opt_text)+'"' : '';
   return '<input class="shot-input" type="text" style="'+st+'" data-field="vpart" data-qid="'+esc(qid)+
-         '" data-part="'+esc(part)+'" value="'+esc(visParts(qid)[part] || '')+
-         '" aria-label="'+esc(o.label || 'Answer')+' answer box">';
+         '" data-part="'+esc(part)+'" value="'+esc(visParts(qid)[part] || '')+'"'+
+         ph+' aria-label="'+esc(o.label || 'Answer')+' answer box">';
 }
 /* the blanks that belong to THIS question (a cloze passage shows the blanks of
    the whole passage, but only the one of this question is this answer) */
