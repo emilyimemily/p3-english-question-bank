@@ -233,6 +233,23 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .ans-audit .audit-ind{display:block;margin-top:5px;font-weight:700}
 .ans-audit-chip{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;
   font-size:11px;font-weight:700;background:var(--amber-soft);color:#8a5a09}
+/* ===== Vocabulary MCQ option meanings (English-English) ===== */
+.gloss-block{margin:10px 0 0;padding:10px 12px;border-radius:8px;
+  border:1px solid var(--border-soft);background:var(--card)}
+.gloss-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px}
+.gloss-count{font-size:11px;font-weight:600;color:var(--muted);margin-left:6px}
+.gloss-list{list-style:none;margin:0;padding:0}
+.gloss-row{display:flex;flex-wrap:wrap;gap:3px 10px;padding:5px 0;
+  border-top:1px solid var(--border-soft);font-size:12.5px;line-height:1.5}
+.gloss-row:first-child{border-top:0}
+.gloss-opt{flex:0 0 auto;min-width:150px;font-weight:700;color:var(--accent-dark);
+  overflow-wrap:anywhere;word-break:break-word}
+.gloss-def{flex:1 1 240px;color:var(--text);overflow-wrap:anywhere}
+.gloss-row.is-missing .gloss-def{color:var(--muted);font-style:italic}
+@media (max-width:680px){
+  .gloss-opt{min-width:0;flex:1 1 100%;max-width:100%}
+  .gloss-def{flex:1 1 100%;max-width:100%}
+}
 .fb-grid{margin-top:10px;border:1px solid var(--border-soft);border-radius:10px;overflow:hidden}
 .fb-row{display:flex;border-bottom:1px solid var(--border-soft)}
 .fb-row:last-child{border-bottom:0}
@@ -621,12 +638,41 @@ function questionById(id){
 }
 function hasOptions(q){ return !!(q.options && typeof q.options === 'object' && Object.keys(q.options).length); }
 function numMarks(q){ const n = Number(q && q.marks); return (isFinite(n) && n > 0) ? n : 1; }
+/* ===== Vocabulary MCQ: an English definition for every option =====
+   The glossary lives in data/question_bank.json under the top-level
+   "glossary" key, so it is already loaded with BANK - no extra request and
+   no service-worker change is needed. */
+function glossKey(s){ return String(s === null || s === undefined ? '' : s).replace(/\s+/g,' ').trim().toLowerCase(); }
+function isVocabMCQ(q){ return /vocabulary\s*mcq/i.test(String((q && q.type) || '')); }
+function optionGlossaryHtml(q){
+  if (!isVocabMCQ(q) || !hasOptions(q)) return '';
+  const g = (BANK && BANK.glossary && typeof BANK.glossary === 'object') ? BANK.glossary : null;
+  if (!g) return '';
+  const keys = Object.keys(q.options).sort();
+  if (!keys.length) return '';
+  let rows = '', missing = 0;
+  keys.forEach(function(k){
+    const raw = String(q.options[k] === null || q.options[k] === undefined ? '' : q.options[k]);
+    const entry = g[glossKey(raw)];
+    let label = '(' + k + ') ' + raw, def = '';
+    if (entry && typeof entry === 'object'){ label = '(' + k + ') ' + (entry.l || raw); def = String(entry.d || '').trim(); }
+    else def = String(entry || '').trim();
+    if (!def) missing++;
+    rows += '<li class="gloss-row' + (def ? '' : ' is-missing') + '">' +
+      '<span class="gloss-opt">' + esc(label) + '</span>' +
+      '<span class="gloss-def">' + esc(def || 'Definition not available - this option has no readable word or phrase in the question bank (see the question scan).') + '</span></li>';
+  });
+  return '<div class="gloss-block"><div class="gloss-title">Option meanings - English definitions' +
+    (missing ? ' <span class="gloss-count">' + missing + ' unavailable</span>' : '') +
+    '</div><ul class="gloss-list">' + rows + '</ul></div>';
+}
 function sourceTag(q){
   const s = [q.year, q.school, q.exam, (q.no !== null && q.no !== undefined) ? 'Q'+q.no : '', q.type]
     .filter(x => x !== '' && x !== null && x !== undefined).join(' · ');
   const a = auditOf(q);
   return s + (q.doubt === true ? ' · ⚠ Needs Review' : '') +
-    (a && a.status === 'questionable' ? ' · ⚠ Answer flagged' : '');
+    (a && a.status === 'questionable' ? ' · ⚠ Answer flagged' : '') +
+    (a && (a.status === 'ai_solved' || a.status === 'ai_generated') ? ' · AI-written answer' : '');
 }
 function modelAnswer(q){
   const raw = String(q.answer === null || q.answer === undefined ? '' : q.answer);
@@ -941,6 +987,14 @@ function answerAuditHtml(q, compact){
       (note ? '<span class="audit-note">'+esc(note)+'</span>' : '')+
       '<span class="audit-note">Original answer-sheet text: '+esc(String(a.official || ''))+'</span></div>';
   }
+  if (st === 'ai_solved' || st === 'ai_generated'){
+    if (compact) return '<span class="ans-audit-chip" style="background:var(--accent-soft);color:var(--accent-dark)" '+
+      'title="'+esc(note)+'">AI-written answer</span>';
+    return '<div class="ans-audit fix"><b>AI-written answer - NOT from the PDF answer key</b>'+
+      '<span class="audit-note">'+esc(note || 'This answer was worked out by the AI assistant because the original paper has no answer key for this item. It is not taken from the scanned answer sheet.')+'</span>'+
+      (src ? '<span class="audit-note">Source: '+esc(src)+'</span>' : '')+
+      '<span class="audit-note">Please verify it with a teacher or parent before relying on the score.</span></div>';
+  }
   if (compact) return '';
   if (st === 'verified')
     return '<div class="ans-audit ok"><b>&#10003; Independently checked</b>'+
@@ -1199,6 +1253,7 @@ function paperFeedback(q){
       ' <span class="marks">'+esc(scoreText)+'</span></div>'+
     '<div class="ans-ref"><b>Reference answer: </b>'+referenceAnswerHtml(q, false)+
       ' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+'</div>'+
+    optionGlossaryHtml(q)+
     '<div class="explain"><b>Why / what to revise: </b>'+esc(why)+'</div>'+
     '<div class="explain"><b>Explanation: </b>'+esc(q.explanation || '—')+'</div>'+
     (unmarked ? '<div class="override"><span class="muted">Self-correction:</span>'+
@@ -1502,6 +1557,7 @@ function practiceFeedback(q){
       (r.overridden ? ' <small class="muted">(self-corrected)</small>' : '')+'</div>'+
     '<div class="ans-ref"><b>Reference answer: </b>'+referenceAnswerHtml(q, false)+
       ' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+chosen+'</div>'+
+    optionGlossaryHtml(q)+
     '<div class="fb-grid">'+
       '<div class="fb-row"><div class="fb-label">This item tests</div><div class="fb-body">'+esc(topic)+'</div></div>'+
       '<div class="fb-row"><div class="fb-label">Why / what to revise</div><div class="fb-body">'+esc(why)+
