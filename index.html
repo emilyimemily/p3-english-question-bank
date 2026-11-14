@@ -233,6 +233,23 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .ans-audit .audit-ind{display:block;margin-top:5px;font-weight:700}
 .ans-audit-chip{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;
   font-size:11px;font-weight:700;background:var(--amber-soft);color:#8a5a09}
+/* ===== Side-by-side AI answer vs PDF answer key (after Submit) ===== */
+.dual-ans{margin:9px 0 0;border:1px solid var(--border-soft);border-radius:10px;overflow:hidden;background:var(--card)}
+.dual-ans-head{display:flex;align-items:center;gap:10px;padding:7px 11px;background:var(--accent-soft);
+  color:var(--accent-dark);font-size:12.5px}
+.dual-badge{margin-left:auto;font-size:11px;font-weight:700;padding:1px 9px;border-radius:20px;
+  background:var(--card);border:1px solid var(--border);color:var(--muted)}
+.dual-ans.ok .dual-badge{color:var(--green);border-color:#bfe6cf}
+.dual-ans.warn .dual-badge{color:var(--amber);border-color:#f0d9a8}
+.dual-ans-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border-soft)}
+.dual-cell{background:var(--card);padding:9px 11px;min-width:0}
+.dual-tag{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.dual-cell b{font-weight:700;color:var(--text);word-break:break-word;font-size:13px}
+.dual-cell i{font-style:normal;color:var(--muted);font-weight:400}
+.dual-note{padding:6px 11px;color:var(--muted);font-size:11.5px;border-top:1px solid var(--border-soft);word-break:break-word}
+.dual-note b{color:var(--text)}
+.dual-src{font-size:11px;opacity:.85;overflow-wrap:anywhere}
+@media(max-width:560px){.dual-ans-grid{grid-template-columns:1fr}}
 .fb-grid{margin-top:10px;border:1px solid var(--border-soft);border-radius:10px;overflow:hidden}
 .fb-row{display:flex;border-bottom:1px solid var(--border-soft)}
 .fb-row:last-child{border-bottom:0}
@@ -626,7 +643,8 @@ function sourceTag(q){
     .filter(x => x !== '' && x !== null && x !== undefined).join(' · ');
   const a = auditOf(q);
   return s + (q.doubt === true ? ' · ⚠ Needs Review' : '') +
-    (a && a.status === 'questionable' ? ' · ⚠ Answer flagged' : '');
+    (a && a.status === 'questionable' ? ' · ⚠ Answer flagged' : '') +
+    (a && (a.status === 'ai_solved' || a.status === 'ai_generated') ? ' · AI-written answer' : '');
 }
 function modelAnswer(q){
   const raw = String(q.answer === null || q.answer === undefined ? '' : q.answer);
@@ -929,7 +947,7 @@ function answerAuditHtml(q, compact){
       return '<span class="ans-audit-chip" title="'+esc(note)+'">&#9888; Questionable</span>';
     return '<div class="ans-audit warn"><b>&#9888; Questionable answer - check both versions</b>'+
       (note ? '<span class="audit-note">'+esc(note)+'</span>' : '')+
-      (mine ? '<span class="audit-ind">Independent answer: '+esc(mine)+'</span>' : '')+
+      (mine ? '<span class="audit-ind">Independent answer: option '+esc(mine)+(q.options && q.options[mine] ? ' ('+esc(String(q.options[mine]))+')' : '')+'</span>' : '')+
       (src  ? '<span class="audit-note">Source: '+esc(src)+'</span>' : '')+
       '<span class="audit-note">Both the paper\'s key and the independent answer are accepted when marking.</span>'+
       '</div>';
@@ -941,10 +959,25 @@ function answerAuditHtml(q, compact){
       (note ? '<span class="audit-note">'+esc(note)+'</span>' : '')+
       '<span class="audit-note">Original answer-sheet text: '+esc(String(a.official || ''))+'</span></div>';
   }
+  if (st === 'ai_solved' || st === 'ai_generated'){
+    if (compact) return '<span class="ans-audit-chip" style="background:var(--accent-soft);color:var(--accent-dark)" '+
+      'title="'+esc(note)+'">AI-written answer</span>';
+    return '<div class="ans-audit fix"><b>AI-written answer - NOT from the PDF answer key</b>'+
+      '<span class="audit-note">'+esc(note || 'This answer was worked out by the AI assistant because the original paper has no answer key for this item. It is not taken from the scanned answer sheet.')+'</span>'+
+      (src ? '<span class="audit-note">Source: '+esc(src)+'</span>' : '')+
+      '<span class="audit-note">Please verify it with a teacher or parent before relying on the score.</span></div>';
+  }
   if (compact) return '';
-  if (st === 'verified')
-    return '<div class="ans-audit ok"><b>&#10003; Independently checked</b>'+
-      '<span class="audit-note">Our own attempt matched the answer on the original paper.</span></div>';
+  if (st === 'verified'){
+    if (mine){
+      const _ot = (q.options && q.options[mine]) ? ' ('+esc(String(q.options[mine]))+')' : '';
+      return '<div class="ans-audit ok"><b>&#10003; Independently checked</b>'+
+        '<span class="audit-ind">AI\'s own answer: option '+esc(mine)+_ot+'</span>'+
+        '<span class="audit-note">This matches the paper\'s printed answer key.</span></div>';
+    }
+    return '<div class="ans-audit ok"><b>&#10003; From the paper\'s answer key</b>'+
+      '<span class="audit-note">AI has not yet independently re-solved this item; check the source scan if unsure.</span></div>';
+  }
   if (st === 'unverifiable')
     return '<div class="ans-audit mute"><b>&#9678; Independent check inconclusive</b>'+
       '<span class="audit-note">'+esc(note || 'The scan text is incomplete; verify against the source scan.')+'</span></div>';
@@ -953,8 +986,57 @@ function answerAuditHtml(q, compact){
       '<span class="audit-note">The original paper has no answer key for this item, so it is not auto-marked.</span></div>';
   return '';
 }
+/* Option label + option text, e.g. "2 (ran into)".  Open-ended answers are
+   returned unchanged. */
+function optLabel(q, val){
+  const v = String(val || '').trim();
+  if (!v) return '';
+  const ot = (q.options && q.options[v]) ? String(q.options[v]).trim() : '';
+  return ot ? v + ' (' + ot + ')' : v;
+}
+/* After Submit the student sees BOTH: the answer the AI worked out on its own
+   and the answer printed in the paper's PDF answer key.  Neither is hidden
+   when they disagree. */
+function dualAnswerHtml(q){
+  const a = auditOf(q);
+  if (!a) return '';
+  const mine = String(a.independent || '').trim();
+  const off  = String(a.official || a.display || '').trim();
+  /* Older items were never independently solved.  Do not put an empty
+     "AI could not answer" panel on all of them; keep their original audit
+     chip instead.  Every newly added item carries show_dual=true. */
+  if (!a.show_dual && !mine) return '';
+  const norm = s => String(s || '').trim().toLowerCase()
+    .replace(/^option\s*/, '').replace(/[()\[\].]/g, '').replace(/\s+/g, ' ');
+  const mineText = norm(String((q.options || {})[mine] || ''));
+  let badge, cls;
+  if (!mine){ badge = 'AI could not solve this from the scan'; cls = 'mute'; }
+  else if (!off){ badge = 'No answer key in the original paper'; cls = 'mute'; }
+  else if (norm(mine) === norm(off) || (mineText && mineText === norm(off))){
+    badge = 'Both answers agree'; cls = 'ok';
+  } else { badge = 'Answers differ - check the scan'; cls = 'warn'; }
+  return '<div class="dual-ans '+cls+'">'+
+    '<div class="dual-ans-head"><b>Answer comparison</b><span class="dual-badge">'+badge+'</span></div>'+
+    '<div class="dual-ans-grid">'+
+      '<div class="dual-cell"><span class="dual-tag">AI\'s own answer</span><b>'+
+        (mine ? esc(optLabel(q, mine)) : '<i>Not recorded</i>')+'</b></div>'+
+      '<div class="dual-cell"><span class="dual-tag">PDF answer key</span><b>'+
+        (off ? esc(optLabel(q, off)) : '<i>No answer key in the original paper</i>')+'</b></div>'+
+    '</div>'+
+    (a.reason ? '<div class="dual-note"><b>AI reasoning: </b>'+esc(String(a.reason))+'</div>' : '')+
+    (a.note ? '<div class="dual-note">'+esc(String(a.note))+'</div>' : '')+
+    (a.source ? '<div class="dual-note dual-src">Source PDF: '+esc(String(a.source))+'</div>' : '')+
+  '</div>';
+}
 function referenceAnswerHtml(q, compact){
-  return esc(referenceAnswerText(q)) + answerAuditHtml(q, compact);
+  const dual = compact ? '' : dualAnswerHtml(q);
+  /* The comparison block already carries the status note, the AI working and
+     the source.  Rendering the legacy audit box as well would repeat the same
+     two answers three times over - EXCEPT for an OCR-corrected key, where the
+     audit box holds the original mis-read answer-sheet text. */
+  const keepAudit = !dual || String((auditOf(q) || {}).status || '') === 'ocr_fixed';
+  return esc(referenceAnswerText(q)) + dual +
+         (keepAudit ? answerAuditHtml(q, compact) : '');
 }
 /* A keyword may now hold alternatives, e.g. "costs | prices".  The audit
    adds these so a student whose correct answer differs from the paper's key
@@ -972,11 +1054,17 @@ function gradeQuestion(q, answer, parts){
      such an item is wrong: let the student / teacher self-mark it instead. */
   if (!hasAnswerKey(q)) return { score:0, correct:false, unmarked:true };
   if (hasOptions(q)){
-    const key = ans.trim(), correctKey = String(q.answer === null || q.answer === undefined ? '' : q.answer).trim();
-    let correct = key !== '' && key === correctKey;
+    const key = ans.trim();
+    const correctKey = String(q.answer === null || q.answer === undefined ? '' : q.answer).trim();
+    const altKey = String(q.answer_alt || '').trim();
+    let correct = key !== '' && (key === correctKey || key === altKey);
     if (!correct && key){
       const optText = String((q.options || {})[correctKey] || '').trim().toLowerCase();
       if (optText && key.toLowerCase() === optText) correct = true;
+      else {
+        const altText = String((q.options || {})[altKey] || '').trim().toLowerCase();
+        if (altText && key.toLowerCase() === altText) correct = true;
+      }
     }
     return { score: correct ? marks : 0, correct };
   }
@@ -1200,7 +1288,7 @@ function paperFeedback(q){
     '<div class="ans-ref"><b>Reference answer: </b>'+referenceAnswerHtml(q, false)+
       ' <b>Your answer: </b>'+esc(String(ans) || '(no answer)')+'</div>'+
     '<div class="explain"><b>Why / what to revise: </b>'+esc(why)+'</div>'+
-    '<div class="explain"><b>Explanation: </b>'+esc(q.explanation || '—')+'</div>'+
+    (q.type && q.type === 'Vocabulary MCQ' ? '' : '<div class="explain"><b>Explanation: </b>'+esc(q.explanation || '—')+'</div>')+
     (unmarked ? '<div class="override"><span class="muted">Self-correction:</span>'+
       '<button class="btn mini" data-action="paper-override-correct" data-qid="'+esc(q.id)+'">I was right</button>'+
       '<button class="btn mini" data-action="paper-override-wrong" data-qid="'+esc(q.id)+'">I was wrong</button>'+
@@ -1508,7 +1596,7 @@ function practiceFeedback(q){
         ' <button class="linkbtn" data-action="add-wrong" data-qid="'+esc(q.id)+'" '+(inWB?'disabled':'')+'>'+
         (inWB ? 'Already in Wrong Book' : 'Add to Wrong Book')+'</button></div></div>'+
     '</div>'+
-    '<div class="explain"><b>Explanation: </b>'+esc(q.explanation || '—')+'</div>'+
+    (q.type && q.type === 'Vocabulary MCQ' ? '' : '<div class="explain"><b>Explanation: </b>'+esc(q.explanation || '—')+'</div>')+
     '<div class="override"><span class="muted">Self-correction:</span>'+
       '<button class="btn mini" data-action="override-correct" data-qid="'+esc(q.id)+'">I was right</button>'+
       '<button class="btn mini" data-action="override-wrong" data-qid="'+esc(q.id)+'">I was wrong</button>'+
