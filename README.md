@@ -260,8 +260,8 @@ are checked for internal consistency and explicitly marked as unverifiable.
 | `unverifiable` | The scan text was too incomplete to re-solve; teacher check recommended. |
 | `no_key` | The original paper contained no answer key for this item, so it is never auto-marked. |
 
-Totals: 574 questionable, 122 OCR-corrected, 928 verified,
-813 unverifiable, 411 with no key. Questionable items can be
+Totals: 574 questionable, 122 OCR-corrected, 966 verified,
+813 unverifiable, 190 with no key. Questionable items can be
 listed with the **doubt / review** filter in the Paper Builder. Where the
 paper's own key is debatable (for example 2025 EOY Rosyth Q32-34: the answer
 sheet says `list / costs / buying`, while `list / prices / paying` also fits),
