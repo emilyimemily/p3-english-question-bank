@@ -380,6 +380,17 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
   .vis-table input[type="text"]{border:1px solid #888;min-height:20px}
   .draw-surface{display:none}
 }
+/* ---- Practice by group -------------------------------------------------
+   The current filter selection is split into fixed groups of 20.  A student
+   does Group 1 today, Group 2 tomorrow, and so on; which groups are done is
+   remembered per filter combination, so the same items are never repeated. */
+.grp-panel{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:10px 0;background:var(--soft,#f3f7fd);}
+.grp-head{font-weight:600;margin-bottom:6px;}
+.grp-head .hint{font-weight:400;color:var(--muted,#5b6b85);font-size:12px;}
+.grp-panel .sel{display:inline-flex;align-items:center;gap:8px;margin:4px 0;flex-wrap:wrap;}
+.grp-panel select{min-width:260px;max-width:100%;}
+.grp-hint{font-size:13px;color:var(--ink,#36456a);margin-top:4px;}
+@media print{.grp-panel{display:none}}
 </style>
 </head>
 <body>
@@ -765,6 +776,7 @@ const state = {
   tab: 'teacher',
   filters: emptyFilters(),
   drawCount: 10,
+  groupPick: 0,               // 0 = follow the suggested next group
   paper: null,                // generated paper { title, date, questions[] }
   showAnswers: false,         // teacher preview: show answers & explanations
   paperIndex: 0,              // teacher preview: ONE big question on screen
@@ -1465,8 +1477,10 @@ function renderTeacher(){
       '<div class="count-row">'+
         '<div>Matching items: <b id="matchCount">'+matchedQuestions().length+'</b> items</div>'+
         '<label class="sel">Questions to draw <input class="num-input" type="number" min="1" max="999" value="'+state.drawCount+'" data-field="count"></label>'+
+        groupPracticePanel()+
         '<div class="toolbar">'+
-          '<button class="btn primary" data-action="gen-random">Generate Random Paper</button>'+
+          '<button class="btn primary" data-action="start-group">'+GT.start+'</button>'+
+          '<button class="btn ghost" data-action="gen-random">Generate Random Paper</button>'+
           '<button class="btn ghost" data-action="gen-all">Select All</button>'+
         '</div>'+
       '</div>'+
@@ -1546,6 +1560,13 @@ function submitPractice(){
     s.elapsed = Date.now() - s.startTime;
     s.showSummary = true;
   }
+  /* A group counts as done only when EVERY question in it has a result.  This
+     also covers students who jump ahead or answer out of order (in that case
+     s.cursor may never reach the end).  markGroupDone is idempotent. */
+  if (s.groupKey && s.groupIndex &&
+      s.questions.every(function(qq){ return !!s.results[qq.id]; })){
+    markGroupDone(s.groupKey, s.groupIndex);
+  }
   render();
   scrollToFeedback();
 }
@@ -1580,6 +1601,126 @@ function practiceSummary(){
     acc: s.questions.length ? Math.round(correctCount/s.questions.length*100) : 0
   };
 }
+/* ============================================================
+   8b. Practice by group
+   A large bank (thousands of items) is impossible to finish in one sitting.
+   The questions matching the current filters are cut into fixed groups of
+   GROUP_SIZE in a stable order, the student picks a group, and completion is
+   remembered per filter combination.  The dropdown pre-selects the first
+   group that has not been done, so doing Group 1 today, Group 2 tomorrow and
+   Group 3 after that never repeats an item.
+   ============================================================ */
+const GROUP_KEY = 'p3en_groups_v1';
+const GROUP_SIZE = 20;
+const GT = {
+  head:   'Practice by group',
+  hint:   'this selection is split into groups of {n}; your progress is remembered',
+  choose: 'Choose a group: ',
+  done:   'Completed groups: ',
+  next:   'Suggested next: Group {n}.',
+  tick:   ' (done)',
+  start:  'Start selected group',
+  random: 'Start random practice',
+  empty:  'That group is empty.',
+  label:  'Group {n}',
+  all:    'All types'
+};
+function gtFill(t, o){
+  return String(t).replace(/\{(\w+)\}/g, function(m, k){
+    return o[k] === undefined ? m : o[k];
+  });
+}
+/* Stable key for the current filter selection - progress is kept separately
+   for each combination of year / school / exam / type / text search / etc. */
+function filterSignature(){
+  const f = state.filters;
+  const parts = [];
+  DIMS.forEach(function(d){
+    if (f[d.key] && f[d.key].size) parts.push(d.key + ':' + [...f[d.key]].sort().join(','));
+  });
+  if (f.text && f.text.trim()) parts.push('text:' + f.text.trim().toLowerCase());
+  if (f.onlyDoubt) parts.push('doubt:1');
+  if (f.wrongMode && f.wrongMode !== 'include') parts.push('wrong:' + f.wrongMode);
+  return parts.join('|') || 'ALL';
+}
+function loadGroupProgress(){
+  try {
+    const raw = localStorage.getItem(GROUP_KEY);
+    const o = raw ? JSON.parse(raw) : {};
+    return (o && typeof o === 'object') ? o : {};
+  } catch(e){ return {}; }
+}
+function saveGroupProgress(o){
+  try { localStorage.setItem(GROUP_KEY, JSON.stringify(o)); } catch(e){}
+}
+function markGroupDone(sig, g){
+  const o = loadGroupProgress();
+  const rec = o[sig] || {done:[], last:0};
+  if (rec.done.indexOf(g) === -1) rec.done.push(g);
+  rec.last = g;
+  o[sig] = rec;
+  saveGroupProgress(o);
+}
+function suggestedGroup(total, sig){
+  const n = Math.max(1, Math.ceil(total / GROUP_SIZE));
+  const done = new Set((loadGroupProgress()[sig] || {done:[]}).done || []);
+  for (let i = 1; i <= n; i++){ if (!done.has(i)) return i; }
+  return n;   /* everything done -> offer the last group again */
+}
+function groupLabel(){
+  const f = state.filters;
+  const types = (f.type && f.type.size) ? [...f.type].join('/') : GT.all;
+  const schools = (f.school && f.school.size) ? [...f.school].join('/') : '';
+  return (schools ? schools + ' - ' : '') + types;
+}
+function groupPracticePanel(){
+  const total = matchedQuestions().length;
+  if (!total) return '';
+  const groups = Math.ceil(total / GROUP_SIZE);
+  const sig = filterSignature();
+  const done = new Set((loadGroupProgress()[sig] || {done:[]}).done || []);
+  const suggested = suggestedGroup(total, sig);
+  let current = state.groupPick || suggested;
+  if (current < 1) current = 1;
+  if (current > groups) current = groups;
+  let opts = '';
+  for (let i = 1; i <= groups; i++){
+    const a = (i - 1) * GROUP_SIZE + 1, b = Math.min(total, i * GROUP_SIZE);
+    const cnt = b - a + 1;
+    const tick = done.has(i) ? GT.tick : '';
+    const sel = (i === current) ? ' selected' : '';
+    opts += '<option value="'+i+'"'+sel+'>Group '+i+' - Q'+a+'-'+b+' ('+cnt+')'+tick+'</option>';
+  }
+  let hint = '';
+  if (done.size){
+    const lst = [...done].sort(function(x, y){ return x - y; }).join(', ');
+    hint = GT.done + lst + '. ';
+  }
+  hint += gtFill(GT.next, {n:suggested});
+  return '<div class="grp-panel">'+
+    '<div class="grp-head">'+GT.head+' <span class="hint">- '+gtFill(GT.hint, {n:GROUP_SIZE})+'</span></div>'+
+    '<label class="sel">'+GT.choose+'<select data-field="group-pick">'+opts+'</select></label>'+
+    '<div class="grp-hint">'+esc(hint)+'</div>'+
+  '</div>';
+}
+function startGroupPractice(){
+  const pool = matchedQuestions();
+  if (!pool.length){ flash('No questions match the current filters.'); return; }
+  const groups = Math.ceil(pool.length / GROUP_SIZE);
+  let g = state.groupPick || suggestedGroup(pool.length, filterSignature());
+  if (g < 1) g = 1;
+  if (g > groups) g = groups;
+  const slice = pool.slice((g - 1) * GROUP_SIZE, (g - 1) * GROUP_SIZE + GROUP_SIZE);
+  if (!slice.length){ flash(GT.empty); return; }
+  const sig = filterSignature();
+  startPractice(slice, {label: gtFill(GT.label, {n:g}) + ' - ' + groupLabel()});
+  /* startPractice() replaces state.student, so the markers go on AFTER it. */
+  state.student.groupKey = sig;
+  state.student.groupIndex = g;
+  /* Clear the manual pick so the next visit falls back to "Suggested next"
+     instead of silently offering the group that was just completed. */
+  state.groupPick = 0;
+}
 function renderStudentSetup(){
   const p = state.paper;
   const banner = p
@@ -1592,7 +1733,9 @@ function renderStudentSetup(){
       '<div class="count-row">'+
         '<div>Available items: <b id="matchCount">'+matchedQuestions().length+'</b> items</div>'+
         '<label class="sel">Number of questions <input class="num-input" type="number" min="1" max="999" value="'+state.drawCount+'" data-field="count"></label>'+
-        '<div class="toolbar"><button class="btn primary" data-action="start-practice">Start Practice</button></div>'+
+        groupPracticePanel()+
+        '<div class="toolbar"><button class="btn primary" data-action="start-group">'+GT.start+'</button>'+
+          '<button class="btn ghost" data-action="start-practice">'+GT.random+'</button></div>'+
       '</div>'+
     '</div>'+
   '</div>';
@@ -2059,6 +2202,7 @@ function handleField(el){
     }
     case 'only-doubt':   state.filters.onlyDoubt = el.checked; updateMatchCount(); break;
     case 'wrong-mode':   state.filters.wrongMode = el.value; updateMatchCount(); break;
+    case 'group-pick':   state.groupPick = parseInt(el.value, 10) || 0; break;
     case 'show-answers': state.showAnswers = el.checked; render(); break;
     case 'paper-goto':   gotoPaperQuestion(parseInt(el.value, 10)); break;
     case 'autoremove':   state.autoRemove = el.checked; break;
@@ -2069,7 +2213,7 @@ function onInput(e){
   const f = e.target.dataset && e.target.dataset.field;
   if (!f) return;
   // These fire both input + change; handle them only once (on input) where possible.
-  if (['filter','only-doubt','show-answers','autoremove','wb-sort','wrong-mode','paper-goto'].indexOf(f) !== -1) return;
+  if (['filter','only-doubt','show-answers','autoremove','wb-sort','wrong-mode','paper-goto','group-pick'].indexOf(f) !== -1) return;
   handleField(e.target);
 }
 function onChange(e){ if (e.target.dataset && e.target.dataset.field) handleField(e.target); }
@@ -2106,6 +2250,7 @@ function onClick(e){
     case 'export-json':    exportPaper(); break;
     case 'start-paper':    if (state.paper) startPractice(state.paper.questions, {label:'Current paper'}); break;
     case 'start-practice': startPracticeCustom(); break;
+    case 'start-group':    startGroupPractice(); break;
     case 'student-back':   state.student.active = false; render(); break;
     case 'submit':         submitPractice(); break;
     case 'prev-question':  gotoQuestion(state.student.qIndex - 1); break;
