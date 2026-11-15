@@ -1,10 +1,10 @@
 # P3 English Question Bank
 
-A free, public, browser-based question bank built from **55 Primary 3 English past-year exam
-papers (2024-2025, Singapore)**. Everything is static: no server, no database, no API key, no
+A free, public, browser-based question bank built from **118 Primary 3 English past-year exam
+papers (2021-2025, Singapore)**. Everything is static: no server, no database, no API key, no
 tracking. Open the link on a phone, tablet or laptop and start practising.
 
-- **2,979 questions** from 55 papers (EOY / WA1 / WA2 / WA3)
+- **3,000 questions** from 118 papers (EOY / WA1 / WA2 / WA3 / CT / PT / PP / SA2)
 - Paper builder, timed practice, automatic marking, item-by-item feedback, wrong book
 - Works offline after the first visit (PWA + service worker)
 - **Open JSON data** so any app, script or AI agent can consume the bank
@@ -66,7 +66,7 @@ from a browser, a script, a notebook or an LLM tool.
 ```js
 const res  = await fetch('https://cdn.jsdelivr.net/gh/emilyimemily/p3-english-question-bank@main/data/question_bank.json');
 const bank = await res.json();
-console.log(bank.questions.length);   // 2979
+console.log(bank.questions.length);   // 3000
 ```
 
 ### Question fields
@@ -247,7 +247,7 @@ scan). A few original papers contain no answer section; those items are marked
 
 ## 9. Answer audit (independent attempt vs original answer key)
 
-Every one of the 2979 questions has an `answer_audit` record, shown next to
+Every one of the 3000 questions has an `answer_audit` record, shown next to
 **Reference answer**. Where the scan text allowed, the question was attempted
 independently BEFORE the paper's answer key was consulted; the remaining items
 are checked for internal consistency and explicitly marked as unverifiable.
@@ -260,8 +260,8 @@ are checked for internal consistency and explicitly marked as unverifiable.
 | `unverifiable` | The scan text was too incomplete to re-solve; teacher check recommended. |
 | `no_key` | The original paper contained no answer key for this item, so it is never auto-marked. |
 
-Totals: 611 questionable, 122 OCR-corrected, 978 verified,
-763 unverifiable, 185 with no key. Questionable items can be
+Totals: 611 questionable, 122 OCR-corrected, 990 verified,
+763 unverifiable, 194 with no key. Questionable items can be
 listed with the **doubt / review** filter in the Paper Builder. Where the
 paper's own key is debatable (for example 2025 EOY Rosyth Q32-34: the answer
 sheet says `list / costs / buying`, while `list / prices / paying` also fits),
