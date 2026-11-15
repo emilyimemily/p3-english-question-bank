@@ -494,10 +494,11 @@ function visualImageHtml(q, which, interactive){
   const v = vis(q), imgs = visList(q, which);
   if (!v || !imgs.length) return '';
   const withBoxes = (v.overlay_on === which);
-  /* Comprehension / Grammar / Vocabulary Cloze (and Editing) are answered ONLY
-     in the boxes printed on the passage scan.  Nothing at all is added below
-     that scan - no mirrored answer row and no "open full size" link. */
-  const barePassage = which === 'question' && (v.mode === 'cloze' || v.mode === 'editing');
+  /* Cloze / Editing / Synthesis are answered ONLY in the boxes printed on the
+     scan.  Nothing at all is added below that scan - no mirrored answer row
+     and no "open full size" link that could hide the printed connector word. */
+  const barePassage = which === 'question' &&
+      (v.mode === 'cloze' || v.mode === 'editing' || v.mode === 'synthesis');
   const sizes = (which === 'article') ? (v.article_wh || []) : (v.question_wh || []);
   let out = '';
   imgs.forEach(function(src, i){
