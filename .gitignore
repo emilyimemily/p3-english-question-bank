@@ -5,8 +5,6 @@ __pycache__/
 Thumbs.db
 *.log
 *.tmp
-_probe*.html
-_deployed_*.json
 
 # Local-only source files (never publish the original scans)
 *.pdf
