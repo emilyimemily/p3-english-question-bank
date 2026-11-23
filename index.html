@@ -1150,8 +1150,12 @@ function gradeQuestion(q, answer, parts){
       .filter(function(k){ return k.charAt(0) !== '_'; })
       .map(function(k){ return String(parts[k] || '').trim(); })
       .filter(Boolean) : [];
+  /* Word order: the boxes are the printed writing lines of ONE sentence, so the
+     line break falls wherever the student likes - grade the joined sentence
+     instead of matching each line against one scoring chunk. */
+  const wordOrder = /word\s*order|arrang/i.test(String(q.type || ''));
   if (v && (vmode === 'cloze' || vmode === 'editing' || vmode === 'synthesis')
-      && vals.length > 1 && kws.length > 1){
+      && !wordOrder && vals.length > 1 && kws.length > 1){
     let hit = 0;
     vals.forEach(function(mine, i){
       const alts = groups[i] || [];
