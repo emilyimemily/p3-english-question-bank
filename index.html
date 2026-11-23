@@ -141,6 +141,8 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .shot-input{position:absolute;box-sizing:border-box;border:1.5px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.96);color:#132a5e;font-size:13px;line-height:1.2;padding:1px 5px;min-width:26px;min-height:22px;box-shadow:0 0 0 2px rgba(47,91,215,.14);z-index:3}
 .shot-input:focus{outline:2px solid #2f5bd7;background:#fff}
 .shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none;min-height:16px}
+.shot-input-compact{min-height:0;min-width:0;font-size:12px;line-height:1;padding:0 2px;
+                    background:rgba(255,255,255,.94)}
 /* word box above a cloze passage - text, not part of the screenshot */
 .word-bank{border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;background:var(--bg);padding:10px 12px;margin:10px 0 6px;max-width:900px}
 .wb-head{font-size:12px;font-weight:700;color:var(--accent-dark);margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -474,7 +476,10 @@ function shotInputHtml(q, o, i, interactive){
   const st = 'left:'+Number(o.x||0)+'%;top:'+Number(o.y||0)+'%;width:'+Number(o.w||10)+'%;height:'+Number(o.h||4)+'%';
   const qid = o.owner || q.id;
   const part = o.part || ('o'+i);
-  const compact = o.compact ? ' shot-input-compact' : '';
+  /* Editing boxes are the printed square itself, so the phone touch-target
+     minimum must not stretch them over the line below. */
+  const compact = (o.compact || (q && q.visual && q.visual.mode === 'editing'))
+    ? ' shot-input-compact' : '';
   /* ONLY the hidden printable copy uses a decoration.  Every on-screen view
      gets a real, focusable text input - a dead <div> here was the reason
      students could not type on the scan at all. */
