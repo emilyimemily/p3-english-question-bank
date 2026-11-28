@@ -1117,6 +1117,11 @@ function kwGroups(q){
     return String(k).split(/[|\/]/).map(function(s){ return s.trim().toLowerCase(); }).filter(Boolean);
   });
 }
+/* words that only join two sentences; a synthesis paper prints one of them */
+var JOINERS = ['as','because','since','so','and','but','or','when','while',
+  'although','though','if','unless','before','after','that','who','whom',
+  'which','whose','where','whether','until','both','neither','either'];
+
 function gradeQuestion(q, answer, parts){
   const marks = numMarks(q);
   const ans = (answer === null || answer === undefined) ? '' : String(answer);
@@ -1156,8 +1161,14 @@ function gradeQuestion(q, answer, parts){
      line break falls wherever the student likes - grade the joined sentence
      instead of matching each line against one scoring chunk. */
   const wordOrder = /word\s*order|arrang/i.test(String(q.type || ''));
+  /* Synthesis splits ONE sentence over the printed lines and keeps its own
+     words between them ("... ______ because ______ ."), so the lines are not
+     separate scoring chunks: a student who leaves the printed "because" out of
+     the box - as the paper asks - would lose a mark otherwise.  Grade the
+     joined sentence against the key words, exactly like Word Order. */
+  const oneSentence = wordOrder || /synthesis/i.test(String(q.type || ''));
   if (v && (vmode === 'cloze' || vmode === 'editing' || vmode === 'synthesis')
-      && !wordOrder && vals.length > 1 && kws.length > 1){
+      && !oneSentence && vals.length > 1 && kws.length > 1){
     let hit = 0;
     vals.forEach(function(mine, i){
       const alts = groups[i] || [];
@@ -1182,10 +1193,28 @@ function gradeQuestion(q, answer, parts){
     }
   }
   if (kws.length){
-    const hits = groups.filter(function(g){
-      return g.some(function(k){ return text.indexOf(k) !== -1; });
+    /* Some answer sheets OCR with a space missing ("gazedat", "artwork" for
+       "art work"), so a key word that the student did type must not count as
+       missing only because of the spacing. */
+    const flat = text.replace(/\s+/g, '');
+    /* A synthesis paper prints the joining word itself - in front of the first
+       line ("Since ______") or between the two lines ("______ because ______")
+       - so the student never types it and it must not count as a missing key
+       word.  Only the joining word is exempt: every content word of the answer
+       still has to be written. */
+    let asked = groups;
+    if (/synthesis/i.test(String(q.type || ''))){
+      const content = groups.filter(function(g){
+        return !g.every(function(w){ return JOINERS.indexOf(w) !== -1; });
+      });
+      if (content.length) asked = content;
+    }
+    const hits = asked.filter(function(g){
+      return g.some(function(k){
+        return text.indexOf(k) !== -1 || flat.indexOf(k.replace(/\s+/g, '')) !== -1;
+      });
     }).length;
-    if (hits === kws.length) return { score:marks, correct:true };
+    if (asked.length && hits === asked.length) return { score:marks, correct:true };
     if (hits >= 1)           return { score:Math.ceil(marks/2), correct:false };
     return { score:0, correct:false };
   }
