@@ -140,7 +140,8 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .shot-img{display:block;width:100%;height:auto}
 .shot-input{position:absolute;box-sizing:border-box;border:1.5px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.96);color:#132a5e;font-size:13px;line-height:1.2;padding:1px 5px;min-width:26px;min-height:22px;box-shadow:0 0 0 2px rgba(47,91,215,.14);z-index:3}
 .shot-input:focus{outline:2px solid #2f5bd7;background:#fff}
-.shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none;min-height:16px}
+.shot-input-compact{min-height:0;min-width:0;font-size:12px;line-height:1;padding:0 2px;
+                    background:rgba(255,255,255,.94)}
 /* word box above a cloze passage - text, not part of the screenshot */
 .word-bank{border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:8px;background:var(--bg);padding:10px 12px;margin:10px 0 6px;max-width:900px}
 .wb-head{font-size:12px;font-weight:700;color:var(--accent-dark);margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -380,7 +381,6 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
   .visual-label{color:#222;font-size:10px}
   .visual-label .tag,.visual-note,.draw-tools{display:none}
   .shot-wrap{max-width:14cm;border-color:#bbb;break-inside:avoid;page-break-inside:avoid}
-  .shot-input-empty{background:#fff;border:1px dashed #555}
   .vis-table th,.vis-table td{border-color:#888;padding:4px 6px;font-size:11px}
   .vis-table input[type="text"]{border:1px solid #888;min-height:20px}
   .draw-surface{display:none}
@@ -475,12 +475,15 @@ function shotInputHtml(q, o, i, interactive){
   const st = 'left:'+Number(o.x||0)+'%;top:'+Number(o.y||0)+'%;width:'+Number(o.w||10)+'%;height:'+Number(o.h||4)+'%';
   const qid = o.owner || q.id;
   const part = o.part || ('o'+i);
-  const compact = o.compact ? ' shot-input-compact' : '';
-  /* ONLY the hidden printable copy uses a decoration.  Every on-screen view
-     gets a real, focusable text input - a dead <div> here was the reason
-     students could not type on the scan at all. */
-  if (interactive === 'print')
-    return '<div class="shot-input shot-input-empty'+compact+'" style="'+st+'" title="'+esc(o.label||'')+'"></div>';
+  /* Editing boxes are the printed square itself, so the phone touch-target
+     minimum must not stretch them over the line below. */
+  const compact = (o.compact || (q && q.visual && q.visual.mode === 'editing'))
+    ? ' shot-input-compact' : '';
+  /* The printable copy is the paper exactly as it was printed, so it carries
+     no answer box at all - the square / ruled line is already in the scan.
+     Every on-screen view gets a real, focusable text input instead; a dead
+     <div> here was the reason students could not type on the scan at all. */
+  if (interactive === 'print') return '';
   /* grammar-cloze inline options: the bracket [ offer / offers ] carries the
      choices - show them as the input's placeholder so the student still sees the
      options while the box sits over the bracket. */
@@ -537,7 +540,7 @@ function visualImageHtml(q, which, interactive){
            (withBoxes ? pic
                       : '<a class="shot-link" href="'+esc(src)+'" target="_blank" rel="noopener">'+pic+'</a>')+
            boxes + surface + '</div>'+
-           (withBoxes && !barePassage ? '<a class="shot-open" href="'+esc(src)+'" target="_blank" rel="noopener">Open this scan full size</a>' : '');
+           (withBoxes && !barePassage && interactive !== 'print' ? '<a class="shot-open" href="'+esc(src)+'" target="_blank" rel="noopener">Open this scan full size</a>' : '');
   });
   return out;
 }
@@ -1146,8 +1149,12 @@ function gradeQuestion(q, answer, parts){
       .filter(function(k){ return k.charAt(0) !== '_'; })
       .map(function(k){ return String(parts[k] || '').trim(); })
       .filter(Boolean) : [];
+  /* Word order: the boxes are the printed writing lines of ONE sentence, so the
+     line break falls wherever the student likes - grade the joined sentence
+     instead of matching each line against one scoring chunk. */
+  const wordOrder = /word\s*order|arrang/i.test(String(q.type || ''));
   if (v && (vmode === 'cloze' || vmode === 'editing' || vmode === 'synthesis')
-      && vals.length > 1 && kws.length > 1){
+      && !wordOrder && vals.length > 1 && kws.length > 1){
     let hit = 0;
     vals.forEach(function(mine, i){
       const alts = groups[i] || [];

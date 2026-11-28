@@ -140,7 +140,6 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
 .shot-img{display:block;width:100%;height:auto}
 .shot-input{position:absolute;box-sizing:border-box;border:1.5px solid #2f5bd7;border-radius:4px;background:rgba(255,255,255,.96);color:#132a5e;font-size:13px;line-height:1.2;padding:1px 5px;min-width:26px;min-height:22px;box-shadow:0 0 0 2px rgba(47,91,215,.14);z-index:3}
 .shot-input:focus{outline:2px solid #2f5bd7;background:#fff}
-.shot-input-empty{background:transparent;border:1px dashed #7185bb;box-shadow:none;min-height:16px}
 .shot-input-compact{min-height:0;min-width:0;font-size:12px;line-height:1;padding:0 2px;
                     background:rgba(255,255,255,.94)}
 /* word box above a cloze passage - text, not part of the screenshot */
@@ -382,7 +381,6 @@ input[type="search"]:focus,select:focus,textarea:focus,.num-input:focus{border-c
   .visual-label{color:#222;font-size:10px}
   .visual-label .tag,.visual-note,.draw-tools{display:none}
   .shot-wrap{max-width:14cm;border-color:#bbb;break-inside:avoid;page-break-inside:avoid}
-  .shot-input-empty{background:#fff;border:1px dashed #555}
   .vis-table th,.vis-table td{border-color:#888;padding:4px 6px;font-size:11px}
   .vis-table input[type="text"]{border:1px solid #888;min-height:20px}
   .draw-surface{display:none}
@@ -480,11 +478,11 @@ function shotInputHtml(q, o, i, interactive){
      minimum must not stretch them over the line below. */
   const compact = (o.compact || (q && q.visual && q.visual.mode === 'editing'))
     ? ' shot-input-compact' : '';
-  /* ONLY the hidden printable copy uses a decoration.  Every on-screen view
-     gets a real, focusable text input - a dead <div> here was the reason
-     students could not type on the scan at all. */
-  if (interactive === 'print')
-    return '<div class="shot-input shot-input-empty'+compact+'" style="'+st+'" title="'+esc(o.label||'')+'"></div>';
+  /* The printable copy is the paper exactly as it was printed, so it carries
+     no answer box at all - the square / ruled line is already in the scan.
+     Every on-screen view gets a real, focusable text input instead; a dead
+     <div> here was the reason students could not type on the scan at all. */
+  if (interactive === 'print') return '';
   /* grammar-cloze inline options: the bracket [ offer / offers ] carries the
      choices - show them as the input's placeholder so the student still sees the
      options while the box sits over the bracket. */
@@ -541,7 +539,7 @@ function visualImageHtml(q, which, interactive){
            (withBoxes ? pic
                       : '<a class="shot-link" href="'+esc(src)+'" target="_blank" rel="noopener">'+pic+'</a>')+
            boxes + surface + '</div>'+
-           (withBoxes && !barePassage ? '<a class="shot-open" href="'+esc(src)+'" target="_blank" rel="noopener">Open this scan full size</a>' : '');
+           (withBoxes && !barePassage && interactive !== 'print' ? '<a class="shot-open" href="'+esc(src)+'" target="_blank" rel="noopener">Open this scan full size</a>' : '');
   });
   return out;
 }
